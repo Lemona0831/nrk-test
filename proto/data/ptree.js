@@ -12,6 +12,10 @@ const PT = {
   smallBrk: 0.03, smallSt: 6, // 제어 작은 노드 주는 붕괴 +3%(곱), 계승 작은 노드 스태미나 +6
 };
 const AT_PTS = { start: 1, lv: 1 }; // 액티브 포인트: 시작 1 + 레벨마다 1
+/* 마검사 두 번 교대 (10월 17일 만든 사람 보완 1, 교대의 박자): 한 차례 두 번째 교대에 보호막 ward, 다음 스킬 비용 −off(바닥 1). max: 할인이 생기는 횟수의 전투당 한도(0이면 차례마다), min: 할인을 받는 스킬의 최소 유산 비용 */
+const SB_ALT2 = { ward: 3, off: 1, max: 0, min: 3 }; // 4단계 조정: min 1 → 3 (모든 다음 스킬 −1이면 1챕터 넘김이 21% → 33%로 뛰었다. 유산 3 · 4 스킬에만 걸면 24%)
+/* 마검 과부하 (10월 17일 보완 4): 교대한 행동 피해 +hit, 이어진 교대 run번째에 다음 유산 4 스킬 비용 −off(바닥 1, 전투마다 1번) */
+const SB_OVER = { hit: 0.5, run: 3, off: 3 }; // 4단계 조정: hit 0.35 → 0.5 (0.35에서는 같은 자리의 결정의 칼보다 3챕터 완주가 낮았다)
 /* 1고리 기울기 (3절 · 비공개 부록 1절): A 가까움 · B 보통 · C 멂 */
 const PT_TILT = {
   spellblade: { pw: 'B', sv: 'C', su: 'B', ct: 'B', ag: 'B', lg: 'A' },
@@ -26,9 +30,9 @@ const PT_TILT = {
 };
 /* 1고리에서 중간 노드가 되는 자리 (2-4) */
 const PT_TILT_N = { A: ['1C', '3L'], B: ['2L', '3R'], C: ['3L'] };
-/* 시작 노드: 직업 기본 능력치 12점 (STAT_REC × 12 반올림) */
+/* 시작 노드: 직업 기본 능력치 12점 (STAT_REC × 12 반올림). 마검사는 4단계(10월 17일) 초반 피해 점검으로 14점(힘 · 지능 +1, 설계 10-4의 2) */
 const PT_START = {
-  spellblade: { str: 4, int: 4, con: 3, wil: 1 }, warden: { str: 4, con: 4, wil: 4 }, monk: { str: 4, dex: 4, con: 4 }, assassin: { dex: 5, int: 4, con: 3 },
+  spellblade: { str: 5, int: 5, con: 3, wil: 1 }, warden: { str: 4, con: 4, wil: 4 }, monk: { str: 4, dex: 4, con: 4 }, assassin: { dex: 5, int: 4, con: 3 },
   hunter: { dex: 5, con: 4, str: 3 }, elementalist: { int: 5, con: 4, wil: 3 }, butcher: { str: 4, con: 4, wil: 3, int: 1 }, confessor: { con: 4, str: 4, int: 4 }, bloodmage: { int: 5, con: 4, wil: 3 },
 };
 /* 공용 중간 노드 풀 (2-8): r2는 2고리(L5) 후보, r3는 3고리(L7 · R7) 후보 */
@@ -54,8 +58,9 @@ const PN_TXT = {
   n_sb_parryspell: { n: '흘린 칼끝', d: '흘리기에 성공한 뒤 첫 주문의 피해가 15% 늘어납니다.' },
   n_sb_lightcut: { n: '가벼운 칼', d: '빠른 칸 베기를 쓰면 스태미나 +5.' },
   n_sb_farspell: { n: '먼 주문', d: '후열 적을 주문으로 맞히면 스태미나 +4(행동마다 1번).' },
-  n_sb_altbeat: { n: '교대의 박자', d: '교대 보호막이 1 늘어납니다(4 → 5).' },
-  n_sb_edgeadd: { n: '칼에 새긴 주문', d: '주문이 칼에 싣는 출혈 · 화상이 1 늘어납니다.' },
+  n_sb_altbeat: { n: '교대의 박자', d: '교대 보호막이 1 늘어납니다(4 → 5). 한 차례에 교대를 두 번 하면(⚡ 빠른 행동과 ▶ 주 행동이 모두 교대) 두 번째 교대에 보호막 +3, 다음 스킬 비용 −1(바닥 1, 차례에 한 번).' }, // 10월 17일 만든 사람 보완 1: 두 번 교대
+  n_sb_edgeadd: { n: '칼에 새긴 주문', d: '주문이 칼에 싣는 출혈 · 화상이 1 늘어납니다. 액티브 포인트를 가장 많이 쓴 갈래에 따라 시작 스킬이 바뀝니다: 혈인 → 마검 베기가 출혈 1, 염검 → 주문 방패가 칼에 화상 1(칼이 비어 있을 때), 마갑 → 주문 방패 보호막 +2. 가장 많은 갈래가 둘 이상이면 없음.' }, // 10월 17일 보완 3: 시작 스킬이 갈래에 들어감
+  n_sb_hybrid: { n: '양손의 마검', d: '베기 스킬은 지능의 30%, 주문 스킬은 힘의 30%를 공격 능력치에 더합니다.' }, // 10월 17일 보완 2: 두 능력치 직업의 부담을 던다(화력 C1 작은 노드에 붙음)
   n_sb_three: { n: '세 박자', d: '이어진 교대의 3번째 행동이면 유산 +1(전투마다 2번, 🔄 환급 한도와 함께 씀).' },
   n_sb_manaloop: { n: '마력 순환', d: '교대 보호막을 얻을 때 스태미나 +3.' },
   n_sb_remnant: { n: '남는 마력', d: '전투가 끝날 때 남은 보호막의 절반만큼 생명력을 회복합니다(최대 생명력의 5%까지).' },
@@ -80,9 +85,9 @@ const KS_LIST = {
   ks_breaker: { dir: 'ct', n: '무너뜨리는 자', d: '무너진 적에게 주는 직접 피해가 20% 늘어납니다.' },
   ks_first: { dir: 'ag', n: '먼저 움직임', d: '전투를 시작하면 가속 1.' },
   ks_flow: { dir: 'ag', n: '흘림새', d: '큰 공격(강타 · 겨눈 한 발 · 모으기)을 흘리면 대응 충전 +1 더(라운드 한도 밖, 전투마다 2번).', resp: 1 },
-  ks_sb_over: { dir: 'pw', cls: 'spellblade', n: '마검 과부하', d: '교대한 행동의 피해가 20% 늘어납니다.', pay: '교대 보호막을 얻지 않습니다.' },
+  ks_sb_over: { dir: 'pw', cls: 'spellblade', n: '마검 과부하', d: '교대한 행동의 피해가 35% 늘어납니다. 교대를 세 번 이으면 다음 유산 4 스킬의 비용 −3(바닥 1, 전투마다 1번).', pay: '교대 보호막을 얻지 않습니다.' },
   ks_sb_beat: { dir: 'ct', cls: 'spellblade', n: '끊는 박자', d: '이어진 교대의 3번째 행동은 붕괴 +40(내 차례에 한 번).' },
-  ks_sb_blood: { dir: 'su', cls: 'spellblade', n: '피를 두른 갑주', d: '보호막 상한이 최대 생명력의 15%에서 22%로 늘어납니다.' },
+  ks_sb_blood: { dir: 'su', cls: 'spellblade', n: '피를 두른 갑주', d: '보호막 상한이 최대 생명력의 15%에서 25%로 늘어납니다. 전투를 시작하면 보호막 6.' },
 };
 /* 임시 트리의 큰 각인 자리 (K5, K9): 공용 큰 각인을 방향마다 목록 순서대로 */
 const KS_TMP = { pw: ['ks_crystal', 'ks_glass'], ct: ['ks_hammer', 'ks_breaker'], ag: ['ks_first', 'ks_flow'], lg: ['ks_deep', 'ks_brim'], su: ['ks_cycle', 'ks_dry'], sv: ['ks_wall', 'ks_heavy'] };
@@ -90,6 +95,7 @@ const KS_TMP = { pw: ['ks_crystal', 'ks_glass'], ct: ['ks_hammer', 'ks_breaker']
 const PT_CLS = {
   spellblade: {
     pwL: { str: 2 }, pwR: { int: 2 }, pwC: { str: 1, int: 1 }, // 화력: 왼쪽 칸 힘, 오른쪽 칸 지능, C1 힘 +1 · 지능 +1
+    smallFx: { pw1C: 'n_sb_hybrid' }, // 10월 17일 보완 2: 화력 입구(C1) 작은 노드에 양손의 마검을 붙인다. 자리 · 종류(작은 노드) · 기울기는 그대로
     nodes: {
       pw2L: 'k_sb1', pw3R: 'k_sb2', pw5L: 'a_eye', pw5R: 'n_sb_altedge', pw7L: 'a_scatter', pw7R: 'n_sb_finish',
       ct2L: 'n_sb_beatcut', ct3R: 'n_sb_telebrk', ct5L: 'a_gap', ct5R: 'n_sb_gap', ct7L: 'a_heavyhand', ct7R: 'n_sb_stagger',
