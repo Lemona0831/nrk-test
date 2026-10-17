@@ -46,6 +46,7 @@ function actionList(b) {
     }
     let why = used ? '이번 전투에 이미 씀' : lack > 0 ? '유산 ' + cost + ' 필요' : null;
     if (!why && s.fx.some(e => e.k === 'parry' || e.k === 'parryBuff') && fxFlag(p, 'noParry')) why = '무거운 갑주: 흘리기를 쓸 수 없습니다';
+    if (!why && s.time === 'fast' && s.tgt !== 'self' && fxFlag(p, 'noFastAtk')) why = '부동의 맹세: ⚡ 공격 스킬을 쓸 수 없습니다'; // 0.8.0 5단계 수도승 큰 각인
     if (!why && needPoison && !alive(b).some(e => e.s.poison)) why = '중독된 적 없음';
     if (!why && /^c_/.test(sid) && s.fx.every(e => e.k === 'cleanse' || e.k === 'hasten')) { const cl = s.fx.find(e => e.k === 'cleanse'); if (cl && !cfTake(p, cl.only, cl.n, 'clean', 1).c) why = '지울 짐 없음'; } // 숨겨진 직업 2: 정화만 하는 칸
     if (!why && buEatOnly(s) && !alive(b).some(e => stk(e, 'bleed') > 0 && canTarget(b, e, v2Static(s)))) why = '출혈된 적 없음'; // 피해 없이 먹는 칸
@@ -104,7 +105,7 @@ function outDmg(b, base, o) {
   if (p.rcN && p.eq.gloves === 'ragechain' && !o.ctr) { d *= 1 + 0.04 * p.rcN; b.rcUsed = 1; }
   if ((p.eq.ring1 === 'pulse' || p.eq.ring2 === 'pulse')) d *= 1.35;
   if (p.s.weak) d *= 0.75;
-  if (p.s.empower && !(p.build === 'monk' && b.curFast)) { d *= 1.25; if (b.cur) b.empUsed = 1; } // 10월 7일: 강화는 실제로 곱한 행동만 1 줄어든다(b.empUsed). 수도승의 ⚡ 공격에는 기가 실리지 않는다
+  if (p.s.empower && !(p.build === 'monk' && b.curFast)) { d *= b.cur && (b.cur.id === 'basic' || b.cur.id === 'heavy') && fxFlag(p, 'kiBasic') ? 1.4 : 1.25; if (b.cur) b.empUsed = 1; } // 0.8.0 5단계 실린 주먹: 기본 · 강공격은 ×1.4 // 10월 7일: 강화는 실제로 곱한 행동만 1 줄어든다(b.empUsed). 수도승의 ⚡ 공격에는 기가 실리지 않는다
   if (isBu(p)) d *= 1 + buThirst(p); // 갈증 (숨겨진 직업 1)
   if (b.carve && b.cur && b.cur.grp) d *= carveMul(b, b.cur.grp); // 군주의 새김
   if (b.cur) b.atkUsed = 1;
@@ -168,7 +169,8 @@ function playerAct(b, id, tgtId) {
     if (g) { logp(b, 'sys', g.n + '이(가) 방패를 들어 ' + tgt.n + '을(를) 가로막는다'); b.rec.push({ k: 'redirect', t: r1(b.t), from: tgt.role, to: g.role }); tgt = g; b.cur.tgt = g.id; } // 장비 효과도 바뀐 대상을 본다
   }
   if (tgt && !act.self && !act.aoe && !eatOnly && !bmEO) { const mg = alive(b).find(x => x.guarding === tgt.id && !(x.stun > 0) && !x.s.broken); if (mg) { logp(b, 'sys', mg.n + '이(가) ' + tgt.n + ' 앞을 막아 대신 맞는다'); tgt = mg; b.cur.tgt = mg.id; } } // 하수인의 지키기 (10월 4일)
-  if (b.prepTurn !== b.turnIdx) { b.prepTurn = b.turnIdx; b.ysR = (b.ysR || 0) + 1; p.guard = 0; p.dodge = 0; p.brace = 0; p.dodgeRed = 0; p.dodgeOn = null; if (isBu(p)) { p.grudge = Math.min(p.tookAcc || 0, p.hpMax * BUTCH.grudgeCap); p.tookAcc = 0; b.krTurn = 0; } if (p.build === 'monk') { p.stance = null; p.ctrN = 0; } if (isCf(p)) b.cleanTurn = 0; if (isBm(p)) b.paidTurn = 0; } // 숨겨진 직업 3: 낸 피는 차례마다 // 숨겨진 직업 1: 받은 피해는 차례의 첫 행동에서 정한다 // 준비(방어·흘리기)는 내 다음 차례까지. 수도승 자세와 되받은 횟수도 여기서 지운다. 빠른 행동으로 건 흘리기를 같은 차례의 주 행동이 지우지 않게 차례의 첫 행동에서만 지운다 (10월 3일: 잔상·흘리며 물러서기가 한 번도 발동하지 않았다)
+  if (b.prepTurn !== b.turnIdx) { b.prepTurn = b.turnIdx; b.ysR = (b.ysR || 0) + 1; p.guard = 0; p.dodge = 0; p.brace = 0; p.dodgeRed = 0; p.dodgeOn = null; if (isBu(p)) { p.grudge = Math.min(p.tookAcc || 0, p.hpMax * BUTCH.grudgeCap); p.tookAcc = 0; b.krTurn = 0; } if (p.build === 'monk') { b.mkStHeld = p.stance ? b.turnIdx : null; p.stance = null; p.ctrN = 0; } if (isCf(p)) b.cleanTurn = 0; if (isBm(p)) b.paidTurn = 0; } // 숨겨진 직업 3: 낸 피는 차례마다 // 숨겨진 직업 1: 받은 피해는 차례의 첫 행동에서 정한다 // 준비(방어·흘리기)는 내 다음 차례까지. 수도승 자세와 되받은 횟수도 여기서 지운다. 빠른 행동으로 건 흘리기를 같은 차례의 주 행동이 지우지 않게 차례의 첫 행동에서만 지운다 (10월 3일: 잔상·흘리며 물러서기가 한 번도 발동하지 않았다)
+  if (p.bbuf && p.build === 'hunter') hnBbufTick(b); // 0.8.0 5단계 사냥꾼: 기간이 지난 기본 공격 버프
   p.tookLast = p.tookSince || 0; p.tookSince = 0; // 앙갚음: 지난 행동 뒤로 받은 피해
   if (p.stun > 0) { p.stun--; logp(b, 'bad', '몸이 말을 듣지 않는다. 행동을 놓친다'); finishPlayer(b, 1, true); return; }
   fxRun(p, 'onAct', b, p, id, act, tgt);
@@ -181,9 +183,11 @@ function playerAct(b, id, tgtId) {
   switch (id) {
     case 'basic': {
       let d = outDmg(b, basicBase(p), { weapon: 1 });
-      const melee1 = !rngCls(p) && !isCaster(p); const bl = CANTRIP[p.build] || '기본 공격';
-      if (p.eq.weapon === 'twin') { const d1 = hurtEnemy(b, tgt, d * 0.5, { single: 1, melee: melee1, label: '첫 날' }); if (b.sbK) sbEdgeHit(b, tgt, d1); if (tgt.alive) hurtEnemy(b, tgt, d * 0.5, { single: 1, melee: melee1, label: '둘째 날' }); }
-      else { const d1 = hurtEnemy(b, tgt, d, { single: 1, melee: melee1, label: bl }); if (b.sbK) sbEdgeHit(b, tgt, d1); }
+      const hb = p.build === 'hunter' && p.bbuf ? hnBasicBuf(b, tgt) : null; if (hb) d *= hb.mul * (1 + hb.extra); // 0.8.0 5단계 사냥꾼 연사: 기본 공격 버프 (덧화살은 같은 공격의 일부로 모든 배수를 받은 피해의 extra만큼)
+      const melee1 = !rngCls(p) && !isCaster(p); const bl = CANTRIP[p.build] || '기본 공격'; let dHb = 0;
+      if (p.eq.weapon === 'twin') { const d1 = hurtEnemy(b, tgt, d * 0.5, { single: 1, melee: melee1, label: '첫 날' }); dHb = d1; if (b.sbK) sbEdgeHit(b, tgt, d1); if (tgt.alive) dHb += hurtEnemy(b, tgt, d * 0.5, { single: 1, melee: melee1, label: '둘째 날' }); }
+      else { const d1 = hurtEnemy(b, tgt, d, { single: 1, melee: melee1, label: bl }); dHb = d1; if (b.sbK) sbEdgeHit(b, tgt, d1); }
+      if (hb) hnBasicAfter(b, tgt, dHb, hb); if (p.build === 'hunter') p.hnLastT = tgt.id;
       if (tgt.alive && hasIt(p, 'venomring')) addPoison(b, tgt, 1, 1);
       addBreak(b, tgt, 10); applyReflux(b, tgt); break; // 0.6: 기본 공격은 스태미나를 채우지 않는다 (11.6절)
     }
@@ -194,6 +198,7 @@ function playerAct(b, id, tgtId) {
       if (p.eq.weapon === 'hook' && tgt.row === 'back') { tgt.row = 'front'; logp(b, 'crit', '갈고리가 ' + tgt.n + '을(를) 앞으로 끌어낸다'); }
       if (p.eq.weapon === 'twinblades') { const hd = outDmg(b, heavyBase(p), { weapon: 1 }) * 0.6; const mh = isMeleeAct(p, 'heavy') ? 1 : 0; const d1 = hurtEnemy(b, tgt, hd, { single: 1, melee: mh, label: '첫 칼' }); if (b.sbK) sbEdgeHit(b, tgt, d1); if (tgt.alive) hurtEnemy(b, tgt, hd, { single: 1, melee: mh, label: '둘째 칼' }); fxHit('twinblades'); }
       else { const d1 = hurtEnemy(b, tgt, outDmg(b, heavyBase(p), { weapon: 1 }), { single: 1, melee: isMeleeAct(p, 'heavy') ? 1 : 0, label: isCaster(p) ? '집중 주문' : '강공격' }); if (b.sbK) sbEdgeHit(b, tgt, d1); } // 사냥꾼 강공격은 활이라 근접이 아니다
+      if (p.build === 'hunter') p.hnLastT = tgt.id; // 0.8.0 5단계: 직전에 친 적(강공격은 버프를 받지 않는다)
       if (tele && isV2(p) && tgt.alive) logp(b, 'good', '힘을 모으는 ' + tgt.n + '의 빈틈을 내리친다. 붕괴 +' + YUSAN.heavyTele);
       addBreak(b, tgt, (isCaster(p) && !isV2(p) ? 30 : 35) + 5 * Math.floor(stat(p, 'str') / 10) + (p.eq.weapon === 'maul' ? 20 : 0) + (tele && isV2(p) ? YUSAN.heavyTele : 0)); if (p.eq.weapon === 'maul') time = 1.4; applyReflux(b, tgt);
       if (tele && isV2(p) && tgt.alive && ysBigTele(tgt) && !(tgt.brkMax > 0) && !(tgt.elite || tgt.strong || tgt.role === 'boss')) { if (tgt.chant) { tgt.chant = null; tgt.pyreRest = 1; } tgt.intent = { k: 'attack' }; tgt.teleTurn = null; logp(b, 'crit', tgt.n + '의 예고를 강공격으로 끊는다'); ysResp(b, '끊기'); } // 붕괴 게이지가 없는 약한 적만 바로 끊는다
@@ -252,8 +257,8 @@ function playerAct(b, id, tgtId) {
       p.lastSkillDmg = d; break;
     }
     case 'guard': p.st -= guardCost(p); p.guard = 1; if (isCf(p)) cfCleanse(b, { n: CONF.guard }, '방어', 'guard'); // 숨겨진 직업 2: 방어하면 해로운 상태를 지운다
-      if (p.build === 'warden') { const g = addWard(b, p, WARD.guard); logp(b, 'good', '방패를 세운다. 보호막 +' + Math.round(g) + ' (' + Math.round(p.ward) + '/' + wardMax(p) + ')'); } if (p.build === 'templar') { p.ward = Math.min(30, (p.ward || 0) + 11); logp(b, 'good', '빛의 방패가 몸을 감싼다. 보호막 ' + p.ward); } logp(b, 'sys', '자세를 낮추고 막을 준비를 한다. 다음 차례까지 받는 피해 절반'); break;
-    case 'dodge': p.st -= dodgeCost(p); setParry(b, tgt, null, null); logp(b, 'sys', tgt.n + '의 다음 공격을 흘릴 준비를 한다' + (p.dodgeRed ? '. 피해 ' + Math.round(p.dodgeRed * 100) + '% 감소' : '')); break;
+      if (p.build === 'warden') { const g = addWard(b, p, wdGuardWard(p)); logp(b, 'good', '방패를 세운다. 보호막 +' + Math.round(g) + ' (' + Math.round(p.ward) + '/' + wardMax(p) + ')'); } if (p.build === 'templar') { p.ward = Math.min(30, (p.ward || 0) + 11); logp(b, 'good', '빛의 방패가 몸을 감싼다. 보호막 ' + p.ward); } logp(b, 'sys', '자세를 낮추고 막을 준비를 한다. 다음 차례까지 받는 피해 절반'); break;
+    case 'dodge': p.st -= dodgeCost(p); if (p.asChain) p.asChain = 0; /* 10월 18일 0.8.0 5단계 연이은 흘림(한 번) */ setParry(b, tgt, null, null); logp(b, 'sys', tgt.n + '의 다음 공격을 흘릴 준비를 한다' + (p.dodgeRed ? '. 피해 ' + Math.round(p.dodgeRed * 100) + '% 감소' : '')); break;
     case 'flaskL': {
       p.flask.life--; const heal = p.hpMax * flaskHealFrac(p) * healMul(p);
       if (p.eq.flask === 'boilflask') { for (const e of alive(b).slice()) hurtEnemy(b, e, outDmg(b, 5, {}), { aoe: 1, fire: 1, label: '끓는 플라스크' }); }
@@ -293,6 +298,27 @@ function playerAct(b, id, tgtId) {
   if (p.hp <= 0) checkEnd(b);
   finishPlayer(b, time);
 }
+/* 0.8.0 5단계 사냥꾼 연사 기본 공격 버프 (원거리 초안 2-6a): 켜진 버프를 이 기본 공격에 얹는다. 직전에 친 적(p.hnLastT)과 다른 적이면 바꿔 쏘기 · 선회 사격.
+   mul: 피해 배수(곱), extra: 덧화살(그 기본 공격 피해의 몫), bleed: 맞히면 거는 출혈(더함), used: 켜져 있던 버프 */
+const hnRound = b => b.prepTurn === b.turnIdx ? (b.ysR || 0) : (b.ysR || 0) + 1; // 이 행동이 들 라운드: 차례의 첫 행동 전(버튼 미리보기)이면 다음 라운드
+function hnBasicBuf(b, tgt) {
+  const p = b.p, B = p.bbuf, R = hnRound(b); if (!B || !tgt) return null; const on = k => B[k] && B[k].until >= R ? B[k] : null;
+  const sw = on('swap'), ex = on('extra'), bb = on('barb'), sk = on('sky'); if (!sw && !ex && !bb && !sk) return null;
+  const diff = p.hnLastT != null && tgt.id !== p.hnLastT; const o = { mul: 1, extra: 0, bleed: 0, tag: [], used: [] };
+  if (sw) { o.used.push('swap'); if (diff) { o.mul *= sw.mul; o.bleed += sw.bleed; o.tag.push('⇄ ×' + sw.mul); } }
+  if (ex) { o.used.push('extra'); o.extra = ex.mul; if (ex.turn && diff) { o.mul *= ex.turn; o.tag.push('선회 ×' + ex.turn); } }
+  if (bb) { o.used.push('barb'); o.bleed += bb.bleed; }
+  if (sk) { o.used.push('sky'); o.mul *= sk.mul; o.tag.push('하늘 가르기 ×' + sk.mul); }
+  return o;
+}
+function hnBasicAfter(b, tgt, d, o) {
+  const p = b.p, B = p.bbuf || {};
+  for (const k of o.used) if (B[k] && !B[k].used) { B[k].used = 1; b.rec.push({ k: 'bbuf', s: k, w: 'use' }); }
+  const x = o.extra > 0 && d > 0 ? d * o.extra / (1 + o.extra) : 0; b.rec.push({ k: 'hnb', d: r1(d), x: r1(x), m: o.mul, x2: b.extraTurn ? 1 : 0 });
+  const L = o.tag.slice(); if (x > 0) L.push('덧화살 +' + r1(x));
+  if (o.bleed > 0 && d > 0 && tgt.alive) { const g = addS(b, tgt, 'bleed', o.bleed); L.push('출혈 ' + (g || 0)); }
+  if (L.length) logp(b, 'good', '연사 버프: ' + L.join(', '));
+}
 /* 단죄: 내가 생명력을 회복하면 단죄된 적 모두가 회복량의 60%만큼 피해 */
 function smiteHeal(b, hl) { if (!(hl > 0) || b.over) return; for (const e of alive(b)) if (e.s.smite) hurtEnemy(b, e, hl * 0.6, { label: '단죄' }); }
 function healMul(p) { return (p.eq.amulet === 'bloodpact' ? 0.85 : 1) * (1 + 0.02 * stat(p, 'wil')) * (p.eq ? fxVal(p, 'healAll', 1, (a, v) => a * v) : 1); } // 10월 16일 0.8.0 2단계: 큰 각인 샘 없는 길(받는 회복 +30%) // 의지 1점마다 회복 +2%
@@ -313,7 +339,7 @@ function addBreak(b, e, v) {
   e.brk += v * (1 + 0.01 * stat(b.p, 'str'));
   if (e.brk >= e.brkMax && e.role === 'bonewall') { e.brk = 0; logp(b, 'crit', e.n + '이(가) 산산이 부서진다'); killEnemy(b, e); checkEnd(b); return; }
   if (e.brk >= e.brkMax) {
-    const cut = !!(e.intent && ['heavy', 'charge', 'explode', 'fuse', 'chant', 'chanting', 'burn'].includes(e.intent.k)); if (e.chant) { e.chant = null; e.pyreRest = 1; logp(b, 'good', e.n + '의 영창이 끊긴다'); } // 모으던 강타·폭발을 끊었는가 (수련장 목표)
+    const cut = !!(e.intent && ['heavy', 'charge', 'explode', 'fuse', 'chant', 'chanting', 'burn'].includes(e.intent.k)); const elChant = b.p.build === 'elementalist' && !!(e.chant || (e.intent && (CHANT_K.includes(e.intent.k) || MCH_K.includes(e.intent.k)))); /* 10월 18일 0.8.0 5단계 원소술사: 영창을 끊었는가 */ if (e.chant) { e.chant = null; e.pyreRest = 1; logp(b, 'good', e.n + '의 영창이 끊긴다'); } // 모으던 강타·폭발을 끊었는가 (수련장 목표)
     e.brk = 0; e.stun = 1; addS(b, e, 'broken', 2); addS(b, e, 'vuln', 2); e.braced = 0; e.countering = 0; e.evading = 0; e.guarding = null; // 10월 4일: 무너지면 버티기 · 반격 태세 · 몸 낮추기 · 지키기가 모두 풀린다 /* 붕괴 상태는 다음 라운드가 끝날 때까지 (10월 3일 라운드 방식: 1이면 이번 라운드 끝에 풀려, 무너뜨린 뒤 내 다음 차례에는 붕괴한 적을 칠 수 없었다) */ if (e.elite || e.strong || e.role === 'boss') chargeEv(b, 'break'); // 격발 갈래 규칙: 정예 이상을 무너뜨리면 대기 −1 (하수인·일반은 세지 않는다: 무리에서 돌지 않게)
     if (e.vow) { e.vow = 0; e.vowTick = b.tick; addS(b, e, 'vuln', 2); logp(b, 'crit', e.n + '의 서원이 깨진다'); codexHit(b, 'abbot', 'vowbreak'); const cs = b.en.filter(x => x.role === 'candle' && x.alive); for (const c of cs) { c.alive = false; c.hp = 0; } if (cs.length) logp(b, 'good', '촛불이 모두 꺼진다'); }
     if (e.foe === 'cantor' && hymnReset(b)) { logp(b, 'good', '노래가 흩어진다'); codexHit(b, 'cantor', 'cut'); }
@@ -324,9 +350,10 @@ function addBreak(b, e, v) {
     if ((b.ctx.ch || 1) >= 3) ch3OnBreak(b, e);
     if (e.role === 'boss') { e.breaks++; e.brkMax = Math.round(e.brkMax * 1.5); }
     logp(b, 'crit', e.n + '의 자세가 무너진다. 모으던 힘이 흩어지고 다음 행동을 놓친다');
-    fxRun(b.p, 'onBreak', b, b.p, e);
+    const hnK = b.p.build === 'hunter'; if (hnK) b.brkCut = cut; fxRun(b.p, 'onBreak', b, b.p, e); if (hnK) b.brkCut = false; // 0.8.0 5단계 사냥꾼 끊은 화살 · 멈춰 세운 틈: 끊기였는가
     b.rec.push({ k: 'break', t: r1(b.t), role: e.role, cut: cut ? 1 : 0 });
     ysResp(b, cut ? '끊기' : '무너뜨리기'); // 10월 15일 유산 1차 시제품: 대응 충전
+    if (b.p.build === 'elementalist') elCutEv(b, e, elChant, !!b.elShockBrk); // 10월 18일 0.8.0 5단계 영창 끊기 노드(흩어진 주의 · 원소 장막). 끊어진 영창의 대응 +1 더는 위 ysResp가 준다(결정 5)
   }
 }
 function finishPlayer(b, time, lost) {
@@ -356,5 +383,5 @@ function finishPlayer(b, time, lost) {
 function kiSettle(b) {
   const p = b.p;
   if (b.kiPend) { const n = b.kiPend; b.kiPend = 0; addS(b, p, 'empower', n); }
-  if (b.kiGrow) { const g = b.kiGrow; b.kiGrow = null; const cur = st(p, 'empower'); const nv = Math.min(KW.empower, (cur + (g.add || 0)) * (g.mul || 1)); if (nv > cur) addS(b, p, 'empower', nv - cur); logp(b, 'good', '기를 끌어올린다. 기 ' + cur + ' → ' + st(p, 'empower')); }
+  if (b.kiGrow) { const g = b.kiGrow; b.kiGrow = null; const cur = st(p, 'empower'); const nv = Math.min(kiCapOf(p), (cur + (g.add || 0)) * (g.mul || 1)); if (nv > cur) addS(b, p, 'empower', nv - cur); logp(b, 'good', '기를 끌어올린다. 기 ' + cur + ' → ' + st(p, 'empower')); }
 }

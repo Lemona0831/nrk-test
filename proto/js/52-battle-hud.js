@@ -243,7 +243,7 @@ function vHudClock(b) {
 /* 차례 알림 모듈: 내 차례 · 적 행동 한 줄 */
 function vHudBanner(b) {
   const last = b.log[b.log.length - 1];
-  const lastl = G.banner ? `<div class="turnban ${G.banner.phase}"><span class="ic">${G.banner.ico}</span><b>${esc(G.banner.who)}</b><span>${esc(G.banner.phase === 'post' && last ? last.m : G.banner.what)}</span></div>` : G.myTurnFlash ? '<div class="turnban me"><b>내 차례</b><span>무엇을 할지 고르세요</span></div>' : '';
+  const lastl = G.banner ? `<div class="turnban ${G.banner.phase}"><span class="ic">${G.banner.ico}</span><b>${esc(G.banner.who)}</b><span>${esc(G.banner.phase === 'post' && last ? last.m : G.banner.what)}</span></div>` : G.myTurnFlash && !b.over ? '<div class="turnban me"><b>내 차례</b><span>무엇을 할지 고르세요</span></div>' : '';
   return lastl ? `<div class="logrow">${lastl}</div>` : '';
 }
 function vHudField(b, hud, pops) {
@@ -296,7 +296,7 @@ function vHudField(b, hud, pops) {
   const blocked = frontBlocked(b);
   const lane = (k, nm, list, reach, extra) => `<div class="lane ${k}${list.length ? '' : ' empty'}" role="group" aria-label="${nm}" style="--n:${Math.max(1, list.length)}"><div class="lanehd"><b>${nm}</b><span class="lanect">${list.length ? list.length + '명' : '비어 있음'}</span>${list.length ? `<span class="reach ${reach[0]}">${reach[1]}</span>` : ''}${extra || ''}</div>${list.length ? `<div class="enemies">${list.map(ecard).join('')}</div>` : ''}</div>`;
   const field = `<section class="field" data-hud="hud-field" aria-label="전장">${G.scr === 'tut' ? vTutGoal(b) : ''}
-    <div class="lanes">${lane('back', '후열', bk, blocked ? ['no', '근접 불가<span class="rlhint"> · 전열이 막는 중</span>'] : ['ok', '근접 닿음<span class="rlhint"> · 전열이 비었거나 무너짐</span>'])}${lane('front', '전열', fr, ['ok', '근접 닿음'])}</div></section>`;
+    <div class="lanes">${!bk.length && !fr.length ? '<p class="fieldclr">적이 모두 쓰러졌습니다</p>' : ''}${lane('back', '후열', bk, blocked ? ['no', '근접 불가<span class="rlhint"> · 전열이 막는 중</span>'] : ['ok', '근접 닿음<span class="rlhint"> · 전열이 비었거나 무너짐</span>'])}${lane('front', '전열', fr, ['ok', '근접 닿음'])}</div></section>`;
   return field;
 }
 function vHudActions(b, hud, tg) {
@@ -325,7 +325,7 @@ function vHudActions(b, hud, tg) {
         const urgent = !dis && (a.id === 'flaskL') && p.hp < p.hpMax * 0.35; const tnew = G.scr === 'tut' && tutNew(b, a.id);
         const at = !dis ? actTarget(b, a) : null; const gd = at && isMeleeAct(p, a.id) ? guardOf(b, at) : null;
         kn++;
-        btns += `<button class="ab g-${lab === '공격' ? 'atk' : lab === '스킬' ? 'sk' : lab === '지키기' ? 'def' : lab === '직업' ? 'sig' : 'etc'}${dis ? ' dis' : ''}${urgent ? ' urgent' : ''}${tnew ? ' tnew' : ''}${a.v2 && skHz(a.s) ? ' hzb' : ''}${!dis && a.pull ? ' blood' : ''}" data-a="act" data-id="${a.id}" data-info="act:${a.id}" data-k="${kn}" aria-disabled="${dis}"><b>${kn <= 9 && G.data.numKeys !== false ? `<kbd>${kn}</kbd>` : ''}<span class="anl">${p.build === 'spellblade' && sbKindOf(p, a.id, a) ? (sbKindOf(p, a.id, a) === 'cut' ? '⚔ ' : '✦ ') : ''}${esc(a.n)}</span><span class="ans" aria-hidden="true">${p.build === 'spellblade' && sbKindOf(p, a.id, a) ? (sbKindOf(p, a.id, a) === 'cut' ? '⚔ ' : '✦ ') : ''}${esc(a.id === 'flaskM' && isV2(p) ? '🧪 정화' : ASHORT[a.id] || a.n)}</span>${spdIco(noFast(p) && a.time <= 0.6 ? 1 : a.time)}${a.v2 && skHz(a.s) ? '<span class="hz" aria-hidden="true">🔄</span>' : ''}</b><small>${why ? esc(why) : '<span class="ac">' + (linkOn(b, a) ? '<span class="lk">🔗 연계 +' + Math.round(HUNT.link * 100) + '%</span>' : esc(a.cost)) + '</span><span class="ax">' + (skillHint(b, a) ? ' · ' + esc(skillHint(b, a)) : '') + (at ? ' → ' + esc(at.n) + (gd ? ' 🛡' : '') : a.aoe ? ' → 전체' : '') + '</span>'}</small></button>`;
+        btns += `<button class="ab g-${lab === '공격' ? 'atk' : lab === '스킬' ? 'sk' : lab === '지키기' ? 'def' : lab === '직업' ? 'sig' : 'etc'}${dis ? ' dis' : ''}${urgent ? ' urgent' : ''}${tnew ? ' tnew' : ''}${a.v2 && skHz(a.s) ? ' hzb' : ''}${!dis && a.pull ? ' blood' : ''}" data-a="act" data-id="${a.id}" data-info="act:${a.id}" data-k="${kn}" aria-disabled="${dis}"><b>${kn <= 9 && G.data.numKeys !== false ? `<kbd>${kn}</kbd>` : ''}<span class="anl">${p.build === 'spellblade' && sbKindOf(p, a.id, a) ? (sbKindOf(p, a.id, a) === 'cut' ? '⚔ ' : '✦ ') : ''}${esc(a.n)}</span><span class="ans" aria-hidden="true">${p.build === 'spellblade' && sbKindOf(p, a.id, a) ? (sbKindOf(p, a.id, a) === 'cut' ? '⚔ ' : '✦ ') : ''}${esc(a.id === 'flaskM' && isV2(p) ? '🧪 정화' : ASHORT[a.id] || a.n)}</span>${spdIco(noFast(p) && a.time <= 0.6 ? 1 : a.time)}${a.v2 && skHz(a.s) ? '<span class="hz" aria-hidden="true">🔄</span>' : ''}</b><small>${why ? esc(why) : '<span class="ac">' + (linkOn(b, a) ? '<span class="lk">🔗 연계 +' + Math.round(hnLinkMul(p) * 100) + '%</span>' : soloOn(b, a) ? '<span class="lk">⇉ 외길 +' + Math.round(HN.solo * 100) + '%</span>' : esc(a.cost)) + '</span><span class="ax">' + (skillHint(b, a) ? ' · ' + esc(skillHint(b, a)) : '') + (at ? ' → ' + esc(at.n) + (gd ? ' 🛡' : '') : a.aoe ? ' → 전체' : '') + '</span>'}</small></button>`;
       }
       btns += '</div>';
     }

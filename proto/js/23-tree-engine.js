@@ -156,7 +156,13 @@ function atEquip(run, id) {
 }
 const atSkills = run => run.atree ? run.atree.own.filter(id => (atBuild(run.build).nodes[id] || {}).kind === 'skill') : [];
 /* ---- 실제 스킬: 강화를 적용한 스킬 (1-3). 강화는 그 스킬을 끼웠을 때만(p.aup). 패시브 노드의 스킬 바꾸기(PN_SK)도 여기서 ---- */
-const PN_SK = { n_sb_thickaegis: { on: 'sb_aegis', fxSet: [{ k: 'ward', add: 3 }] } }; // 두꺼운 주문 방패: 주문 방패의 보호막 +3
+const PN_SK = { n_sb_thickaegis: { on: 'sb_aegis', fxSet: [{ k: 'ward', add: 3 }] }, // 두꺼운 주문 방패: 주문 방패의 보호막 +3
+  /* 0.8.0 5단계 파수꾼 · 수도승: 시작 스킬을 바꾸는 패시브 */
+  n_wd_wide: { on: 'w_bash', set: { tgt: 'front' }, fxSet: [{ k: 'dmg', n: 10 }, { k: 'brk', n: 24 }] }, // 넓은 방패
+  n_wd_brace6: { on: 'w_brace', fxSet: [{ k: 'st', s: 'protect', n: 6 }] }, // 단단한 자세
+  n_wd_bracewall: { on: 'w_brace', fxAdd: [{ k: 'ward', n: 6 }] }, // 굳은 방패
+  n_mk_prestance: { on: 'm_brace', fxSet: [{ k: 'stance', dmg: 12 }] }, // 먼저 잡은 자세
+};
 /* 칼에 새긴 주문 (10월 17일 보완 3): 이끄는 갈래(p.sbLead)에 따라 시작 스킬을 바꾼다. 화상은 칼이 비어 있을 때만 싣는다(soft) */
 const PN_LEAD = { n_sb_edgeadd: { 혈인: { on: 'sb_edge', fxAdd: [{ k: 'st', s: 'bleed', n: 1 }] }, 염검: { on: 'sb_aegis', fxAdd: [{ k: 'imbue', s: 'ignite', n: 1, soft: 1 }] }, 마갑: { on: 'sb_aegis', fxSet: [{ k: 'ward', add: 2 }] } } };
 const pnLead = (p, id) => (p.pn || []).map(k => PN_LEAD[k] && p.sbLead && PN_LEAD[k][p.sbLead]).filter(m => m && m.on === id);
@@ -164,6 +170,7 @@ const SKC = new Map();
 function skMod(s, m) {
   if (m.set) Object.assign(s, m.set);
   for (const x of m.fxSet || []) { const e = s.fx.find(f => f.k === x.k && (x.s == null || f.s === x.s)); if (!e) throw new Error('fxSet ' + s.id + ' ' + x.k); for (const k in x) if (k === 'add') e.n = (e.n || 0) + x.add; else if (k !== 'k') e[k] = x[k]; }
+  for (const x of m.fxDel || []) s.fx = s.fx.filter(f => !(f.k === x.k && (x.s == null || f.s === x.s))); // 0.8.0 5단계: 효과 빼기 (다시 세우는 벽의 보호)
   for (const x of m.fxAdd || []) s.fx.push(Object.assign({}, x));
   if (m.cond) s.cond = (s.cond || []).concat([Object.assign({}, m.cond)]);
 }
@@ -183,7 +190,15 @@ function skOf(p, id) {
 function skCondMet(b, s, c, tgt) {
   const p = b.p; if (c.when === 'resp') return b.ysRespLast != null && b.ysRespLast >= (b.ysR || 0) - 1;
   if (c.when === 'alt2') { if (p.build !== 'spellblade' || !s.kind) return false; const alt = !!p.sbLast && s.kind !== p.sbLast; return (alt ? (p.sbRun || 0) + 1 : 0) >= 2; }
+  /* 0.8.0 5단계 내 자원 조건 (1-2절): 보유만 본다. 비용을 낼 때의 값 */
+  const mw = /^ward>=(\d+)$/.exec(c.when || ''); if (mw) return (p.ward || 0) >= +mw[1];
+  const mk = /^ki>=(\d+)$/.exec(c.when || ''); if (mk) return st(p, 'empower') >= +mk[1];
+  if (c.when === 'stance') return !!(p.stance || (b.mkStHeld != null && b.mkStHeld === b.turnIdx)); // 직전 적 차례를 자세로 맞았다(내 차례 첫 행동에서 자세가 풀려도 그 차례 동안 참)
   const m = /^kw:(\w+)>=(\d+)$/.exec(c.when || ''); if (m) { const ok = e => e && e.alive && st(e, m[1]) >= +m[2]; return tgt ? ok(tgt) : alive(b).some(ok); }
+  /* 0.8.0 5단계 사냥꾼 (원거리 초안 2-2 · 8절 보완 1 · 2, 10월 18일): link = 이 스킬이 연계(직전 갈래 lastBr과 다름, 시작 스킬은 lb). 외길 사냥꾼이면 같은 갈래를 바로 이어 씀으로 바뀐다.
+     linkFast = link이거나 이번 차례에 빠른 기동 스킬을 먼저 씀(보완 2, 측정 스위치 HUNT_BRIDGE만 씀). focus>=n = 대상의 추적 겹(보유) */
+  if (c.when === 'link' || c.when === 'linkFast') { if (p.build !== 'hunter') return false; const br = hnBr(s); const lk = br !== '시작' && !!p.lastBr && (hnSolo(p) ? p.lastBr === br : p.lastBr !== br); return lk || (c.when === 'linkFast' && b.hnFastMob != null && b.hnFastMob === b.turnIdx); }
+  const mf = /^focus>=(\d+)$/.exec(c.when || ''); if (mf) { const ok = e => e && e.alive && p.focus && p.focus.id === e.id && p.focus.n >= +mf[1]; return tgt ? ok(tgt) : alive(b).some(ok); }
   return false;
 }
 function skCostAt(b, s, tgt) {
@@ -212,8 +227,17 @@ function ksCands(run) {
   });
 }
 /* 셋 고르기: 거리 → 이미 고른 후보와 다른 방향 → 시드 순서. 3칸 안이 모자라면 4, 5칸 …에서 같은 순서로 채운다 */
+/* 10월 18일 0.8.0 5단계(원거리 초안 10절 결정 4, 모든 직업): 연 액티브 스킬(시작 스킬 · 찍은 스킬 노드 · 장착)에 유산 4 스킬이 하나도 없으면 결정의 칼(유산 4 스킬 +25%)은 후보에서 뺀다.
+   비용은 강화 · 노드 비용을 넣은 skCost(skOf). 빠진 자리는 같은 규칙(거리 → 방향 → 시드)으로 다음 후보가 채운다 */
+function ksHasCost4(run) {
+  const A = atBuild(run.build), T2 = TREE2[run.build] || { starters: [] }; const own = (run.atree && run.atree.own) || [];
+  const p = Object.assign({}, run.p || {}, { build: run.build, aup: own.filter(id => A.nodes[id] && A.nodes[id].kind === 'upgrade') });
+  const ids = new Set((T2.starters || []).concat(own.filter(id => A.nodes[id] && A.nodes[id].kind === 'skill'), run.skills || []));
+  for (const id of ids) { const s = SK2[id] ? skOf(p, id) : null; if (s && skCost(s) === 4) return true; } return false;
+}
 function ksOfferMake(run) {
-  const C = ksCands(run).sort((a, b) => a.d - b.d || a.rk - b.rk), out = [];
+  const T = ptBuild(run.build), no4 = !ksHasCost4(run);
+  const C = ksCands(run).filter(x => !(no4 && T.nodes[x.id].fx === 'ks_crystal')).sort((a, b) => a.d - b.d || a.rk - b.rk), out = [];
   while (out.length < PT.ksOffer && C.length) { const d = C[0].d; const grp = C.filter(x => x.d === d); const dirs = out.map(x => x.dir); const pick = grp.find(x => !dirs.includes(x.dir)) || grp[0]; out.push(pick); C.splice(C.indexOf(pick), 1); }
   return out.map(x => x.id);
 }
@@ -296,6 +320,105 @@ const IFX_NODE = {
   ks_sb_over: { hitP: b => b.sbAlt ? SB_OVER.hit : 0, noAltWard: 1, ovDisc: 1 }, // 10월 17일 보완 4: +35%, 교대 셋 이으면 다음 유산 4 스킬 −3(바닥 1, 전투마다 1번)
   ks_sb_beat: { brk: b => { if (!(b.sbAlt && b.sbRunNow >= 3) || b.ksBeatR === (b.ysR || 0)) return 0; b.ksBeatR = b.ysR || 0; return 40; } },
   ks_sb_blood: { wardCap: 0.25, onStart: (b, p) => { addWard(b, p, 6, undefined, true); return 1; } }, // 10월 17일 보완 4: 상한 25%, 전투 시작 보호막 6
+  /* ---- 0.8.0 5단계 파수꾼 (docs/제안/0.8.0-5단계-파수꾼-수도승-트리초안-2026-10-17.md 2-5) ---- */
+  n_wd_held: { heldWard: 1 }, // 받아낸 몫 (wdHeld)
+  n_wd_low: { guardLow: 1 }, // 버팀목 (wdGuardWard)
+  n_wd_will: { guardWil: 1 }, // 다진 의지 (wdGuardWard)
+  n_wd_brace6: {}, n_wd_bracewall: {}, n_wd_wide: {}, // 시작 스킬 바꾸기 (PN_SK)
+  n_wd_remnant: { onWin: run => { const p = run.p; const v = Math.min(p.hpMax * 0.05, (p.wardLeft || 0) / 3, p.hpMax - p.hp); if (!(v > 0)) return; p.hp += v; return 1; } }, // 남은 벽
+  n_wd_breath: { cost: (p, id) => id === 'guard' ? -6 : 0 }, // 숨 고르는 방패: 방어 스태미나 20 → 14
+  n_wd_shake: { heldBrk: 1 }, // 흔들리는 방패 (wdHeld)
+  n_wd_breakwall: { onBreak: (b, p) => { if (b.wdBwA === b.actN) return; b.wdBwA = b.actN; return addWard(b, p, 6, undefined, true) > 0 ? 1 : 0; } }, // 무너뜨린 자의 벽
+  n_wd_turn: { inP: (b, p, o) => o.src && !o.dot && o.src.row === 'back' ? 0.06 : 0 }, // 몸 돌리기
+  n_wd_pullhit: { hitP: (b, p, e) => { if (e.pulledA == null || e.pulledA === b.actN) return 0; e.pulledA = null; return 0.15; } }, // 다가서는 방패: 끌어낸 적에게 다음 공격
+  n_wd_stack: { hitP: (b, p, e, o, c) => { // 쌓인 벽 (10월 17일 검토 1-1): 유산 3 이상 공격 스킬(태우기 칸 제외) · 강공격만, 보호막 15 이상이면 5를 써서 +12%. 행동마다 한 번
+    if (!c || o.ctr) return 0; if (b.wdStA === b.actN) return 0.12; if (b.wdStNo === b.actN) return 0;
+    const s = c.skill ? skOf(p, c.id) : null; const ok = c.id === 'heavy' || (s && skCost(s) >= 3 && !s.fx.some(f => f.k === 'wardBurn'));
+    if (!ok || (p.ward || 0) < 15) { b.wdStNo = b.actN; return 0; } p.ward -= 5; b.wdStA = b.actN; logp(b, 'good', '쌓인 벽. 보호막 5를 써서 피해 +12%'); return 0.12; } },
+  n_wd_respward: { respWard: 1 }, // 막아 든 숨 (ysResp)
+  n_wd_ready: { onStart: (b, p) => { addWard(b, p, p.hpMax * 0.06, undefined, true); return 1; } }, // 준비된 방패
+  n_wd_fuel: { onSkill: b => { const n = b.burnLast || 0; b.burnLast = 0; if (n < 10) return; fxStam(b.p, 4 * Math.floor(n / 10)); return 1; } }, // 보호막 연료
+  n_wd_heavy: { hitP: (b, p, e, o, c) => c && c.id === 'heavy' ? 0.10 : 0, brk: (b, p, e, c) => c && c.id === 'heavy' ? 10 : 0 }, // 무거운 방패
+  ks_wd_drop: { hitP: () => 0.15, guardWeak: 1 }, // 방패를 내린 자
+  ks_wd_eternal: { wardCap: 0.4, hitP: (b, p, e, o, c) => c && c.skill && (skOf(p, c.id) || { fx: [] }).fx.some(f => f.k === 'wardBurn') ? -0.3 : 0 }, // 영원한 성벽
+  /* ---- 0.8.0 5단계 수도승 (3-5) ---- */
+  n_mk_loaded: { kiBasic: 1 }, // 실린 주먹 (outDmg)
+  n_mk_burst: { kiBurstPer: 1 }, // 터지는 기
+  n_mk_last: { hitP: (b, p, e, o, c) => c && c.skill && b.kiTookA === b.actN && st(p, 'empower') === 0 ? 0.12 : 0 }, // 마지막 한 방울
+  n_mk_steady: { inP: (b, p, o) => p.stance && o.charged && !o.dot ? 0.15 : 0 }, // 흔들리지 않는 몸
+  n_mk_breath: { onCounter: (b, p) => { fxStam(p, 3); return 1; } }, // 고른 숨
+  n_mk_cycle: { onWin: run => { const p = run.p; const v = Math.min(p.hpMax * 0.01 * (p.kiLeft || 0), p.hpMax - p.hp); if (!(v > 0)) return; p.hp += v; return 1; } }, // 기의 순환
+  n_mk_shake: { ctrBrk: 6 }, // 흔드는 되받기: 되받기 붕괴 10 → 16
+  n_mk_seal: { onSeal: (b, p) => { if (b.mkSealA === b.actN) return; b.mkSealA = b.actN; addS(b, p, 'empower', 1); logp(b, 'good', '끊는 손끝. 기 +1'); return 1; } }, // 끊는 손끝
+  n_mk_parry: { onParry: (b, p) => { const R = b.ysR || 0; if (b.mkParR === R) return; b.mkParR = R; addS(b, p, 'empower', 1); logp(b, 'good', '흘려 받기. 기 +1'); return 1; } }, // 흘려 받기: 적 차례마다 한 번
+  n_mk_prestance: {}, // 먼저 잡은 자세 (PN_SK)
+  n_mk_quick: { hitP: (b, p, e, o, c) => c && c.skill && (skOf(p, c.id) || {}).time === 'fast' ? 0.08 : 0 }, // 날랜 손
+  n_mk_vessel: { kiCap: 1 }, // 기의 그릇 (kiCapOf)
+  n_mk_seed: { onStart: (b, p) => { addS(b, p, 'empower', 1); return 1; } }, // 남은 숨
+  n_mk_double: { ctrKi2: 1 }, // 되받은 기세: 한 적 차례의 두 번째 되받기부터 기 +1 더
+  n_mk_pool: { hitP: (b, p, e, o) => o && o.ctr && st(p, 'empower') >= kiCapOf(p) ? 0.2 : 0 }, // 고인 기
+  n_mk_spill: { kiSpillSt: 4 }, // 넘치는 기운
+  ks_mk_empty: { hitP: (b, p, e, o, c) => c && c.skill && (skOf(p, c.id) || { fx: [] }).fx.some(f => f.k === 'kiBurst') ? 0.3 : 0, ctrKiOnce: 1 }, // 비운 그릇 (10월 17일 검토 2-2: 대가는 되받기 기 한 번)
+  ks_mk_vow: { inP: (b, p, o) => p.stance && !o.dot ? 0.12 : 0, noFastAtk: 1 }, // 부동의 맹세
+  /* ---- 0.8.0 5단계 사냥꾼 (docs/제안/0.8.0-5단계-원거리3직업-트리초안-2026-10-17.md 2-5, 10월 18일) ---- */
+  n_hn_pull: { hitP: (b, p, e, o, c) => c && c.id === 'basic' && b.extraTurn ? 0.15 : 0, onHit: (b, p, e, o, c, d) => { if (!c || c.id !== 'basic' || !b.extraTurn || !(d > 0) || b.hnPullA === b.actN) return; b.hnPullA = b.actN; fxStam(p, 5); return 1; } }, // 이어 당기는 활: 가속의 두 번째 차례 기본 공격(덧화살 포함) +15%, 맞히면 스태미나 +5
+  n_hn_breath: { hitP: (b, p, e, o, c) => c && c.skill && hnFocusPre(b, p, e, o) >= HUNT.focusMax ? 0.08 : 0 }, // 사냥감의 숨: 맞히기 전 추적 3겹 이상
+  n_hn_tough: { inP: (b, p, o) => !o.dot && p.hp <= p.hpMax * 0.3 ? 0.08 : 0 }, // 질긴 사냥꾼
+  n_hn_unavoid: { inP: (b, p, o) => o.aoe || o.spell || o.dot ? 0.08 : 0 }, // 피할 수 없는 것
+  n_hn_rest: { onEvade: (b, p) => { if ((b.hnRestN || 0) >= 3) return; b.hnRestN = (b.hnRestN || 0) + 1; return fxHeal(p, p.hpMax * 0.02) > 0 ? 1 : 0; } }, // 숨 고르기: 전투마다 3번
+  n_hn_camp: { onWin: run => { const p = run.p; const v = Math.min(p.hpMax * 0.01 * Math.min(4, p.ysLeft || 0), p.hpMax - p.hp); if (!(v > 0)) return; p.hp += v; return 1; } }, // 사냥꾼의 휴식: 남은 유산 1마다 1%(최대 4%)
+  n_hn_tele: { hitP: (b, p, e) => e.intent && (YS_PRE_K.includes(e.intent.k) || e.intent.aimed) ? 0.08 : 0 }, // 예고 읽기: 큰 예고(먼저 치우기와 같은 기준)
+  n_hn_cutarrow: { onBreak: (b, p) => { if (!b.brkCut || !b.cur || b.hnCutA === b.actN) return; b.hnCutA = b.actN; fxStam(p, 12); return 1; } }, // 끊은 화살: 붕괴로 예고를 끊으면(addBreak의 b.brkCut)
+  n_hn_stopgap: { onBreak: (b, p, e) => { if (!b.brkCut || !b.cur) return; e.hnGapA = b.actN; return 1; }, hitP: (b, p, e) => { if (e.hnGapU === b.actN) return 0.15; if (e.hnGapA == null || e.hnGapA === b.actN) return 0; e.hnGapA = null; e.hnGapU = b.actN; return 0.15; } }, // 멈춰 세운 틈: 끊은 적에게 다음 공격(연타는 그 공격 전체)
+  n_hn_aside: { onEvade: (b, p) => { p.hnAside = 1; return 1; }, hitP: (b, p, e, o, c) => { if (b.hnAsideU === b.actN) return 0.1; if (!p.hnAside || !c || o.ctr) return 0; p.hnAside = 0; b.hnAsideU = b.actN; return 0.1; } }, // 비켜 선 자리: 피한 다음 내 첫 공격 한 번
+  n_hn_quick: { hitP: (b, p, e, o, c) => c && c.skill && (skOf(p, c.id) || {}).time === 'fast' ? 0.08 : 0 }, // 날랜 시위
+  n_hn_pass: { onKill: (b, p, e) => { if (e.pile || !p.focus || p.focus.id !== e.id || p.focus.n < HUNT.focusMax) return; p.hnPass = 1; return 1; } }, // 넘겨받는 추적: 다음에 친 다른 적은 추적 1겹에서 (hurtEnemy)
+  n_hn_linkup: { hnLinkUp: 1 }, // 이어 쏘기 숙련: 연계 +30% → +38% (hnLinkMul)
+  n_hn_finale: { hitP: (b, p, e, o, c) => c && c.skill && b.hnLinkA === b.actN && skCostOfCur(p, c) === 4 ? 0.12 : 0 }, // 끝맺는 연계: 연계로 쓴 유산 4 스킬
+  ks_hn_solo: { hnSolo: 1 }, // 외길 사냥꾼 (soloOn · skCondMet link)
+  ks_hn_chase: { focusCap: 1 }, // 끝까지 쫓는 자 (focusCapOf)
+  /* ---- 10월 18일 0.8.0 5단계 원소술사 (docs/제안/0.8.0-5단계-원거리3직업-트리초안-2026-10-17.md 3-2 · 3-3 · 3-5, 결정 9–11) ----
+     flatAdd: hurtEnemy가 배율을 모두 곱한 뒤 더한다(원소술사만). shockMul: 열충격 배수(elemShock, 곱함). elGuard: 서리 무게 더하기(elGuardOf). onChantCut: elCutEv, elCutResp: ysResp → elCutResp. onRime: elemRime */
+  n_el_student: { flatAdd: (b, p, e, o, c) => { if (o.dot || !c || !c.skill || b.elStuA === b.actN) return 0; b.elStuA = b.actN; return 3; } }, // 불의 학도: 스킬의 첫 타격 +3(행동마다 한 번)
+  n_el_blaze: { hitP: (b, p, e, o, c) => c && c.skill && !o.dot && b.elBurnPre && (b.elBurnPre[e.id] || 0) >= 5 ? 0.10 : 0 }, // 거센 불길: 불태우기 계열이 화상 5 이상을 지우면 그 공격 +10% (b.elBurnPre는 runSkill2가 싣는다)
+  n_el_frostskin: { inP: (b, p, o) => o.src && !o.dot && (st(o.src, 'chill') > 0 || o.src.chillR === b.round) ? 0.05 : 0 }, // 서리 껍질: 둔화된 적(서리 무게와 같은 판정)에게서 받는 직접 피해 −5%, 큰 공격에도
+  n_el_dull: { elGuard: 0.05 }, // 무뎌진 칼날: 서리 무게 −30% → −35%(평소 공격만)
+  n_el_coolbreath: { onShock: (b, p) => { const left = p.hpMax * 0.05 - (b.elCbH || 0); const v = Math.min(p.hpMax * 0.01, left); if (!(v > 0)) return; const g = fxHeal(p, v); b.elCbH = (b.elCbH || 0) + v; return g > 0 ? 1 : 0; } }, // 식은 숨: 열충격마다 1%, 전투마다 5%까지
+  n_el_melt: { onRime: (b, p) => { const left = p.hpMax * 0.04 - (b.elMeltH || 0); const v = Math.min(p.hpMax * 0.01, left); if (!(v > 0)) return; const g = fxHeal(p, v); b.elMeltH = (b.elMeltH || 0) + v; return g > 0 ? 1 : 0; } }, // 녹는 서리: 되얼림이 발동할 때마다 1%, 전투마다 4%까지
+  n_el_chanthand: { brk: (b, p, e) => e && e.intent && CHANT_K.includes(e.intent.k) ? 10 : 0 }, // 영창 끊는 손: 영창 중(chant · chanting · burn)인 적에게 붕괴 +10
+  n_el_cracked: { shockMul: (b, p, e) => e && e.s && e.s.broken ? 1.2 : 1 }, // 깨진 얼음: 무너진 적에게 열충격 +20%
+  n_el_first: { hitP: (b, p, e, o, c) => c && c.skill && !o.dot && (b.turnIdx || 0) === 0 ? 0.12 : 0 }, // 앞선 주문: 전투 첫 내 차례(가속의 두 번째 차례는 빼고)의 스킬 +12%
+  n_el_light: { onSkill: (b, p, act) => { if (!act || !act.s || act.s.time !== 'fast' || !b.elSt || b.elSt.a !== b.actN || !(b.elSt.ignite || b.elSt.chill)) return; fxStam(p, 4); return 1; } }, // 가벼운 손: ⚡ 스킬로 화상이나 둔화를 걸면 스태미나 +4(행동마다 한 번, b.elSt는 addS가 적는다)
+  n_el_scatter: { onChantCut: (b, p) => { fxStam(p, 10); return 1; } }, // 흩어진 주의: 영창을 끊으면 스태미나 +10
+  n_el_echo: { onShock: (b, p) => { fxStam(p, 6); return 1; } }, // 이어지는 울림: 옛 남는 울림(k_el3)의 효과
+  n_el_spread: { shockMul: (b, p, e, arc) => arc ? 1.15 : 1, hitP: (b, p, e, o, c) => c && c.skill && !o.dot && (skOf(p, c.id) || { fx: [] }).fx.some(f => f.k === 'shockx' && f.arc) ? 0.15 : 0 }, // 번지는 울림: 번진 열충격 · 번짐 칸의 직접 피해 +15%
+  n_el_even: { onSkill: b => { if (!b.elSt || b.elSt.a !== b.actN || !b.elSt.ignite || !b.elSt.chill) return; fxStam(b.p, 6); return 1; } }, // 고른 원소: 한 행동에 화상 · 둔화를 둘 다 걸면 스태미나 +6
+  ks_el_cut: { elCutResp: 1 }, // 끊어진 영창 (elCutResp: 끊기 · 무너뜨리기 · 먼저 치우기 → 라운드 한도 밖 대응 +1, 전투마다 2번. 10월 18일 0.8.0 5단계 결정 5)
+  ks_el_ember: { elBurnPer: 1, shockMul: () => 0.7 }, // 잿불의 길: 태운 화상 1마다 +1 더 · 대가 열충격 −30%
+  ks_el_heart: { elGuard: 0.15, elIgnCut: 1 }, // 얼음 심장: 서리 무게 −45% · 대가 거는 화상 −1(최소 1)
+  /* ---- 10월 18일 0.8.0 5단계 암살자 (docs/제안/0.8.0-5단계-원거리3직업-트리초안-2026-10-17.md 1-3 · 4-6, 결정 13–17) ----
+     값 키는 암살자만 읽는다(asSum · psnCapOf, js/20): psnCap 중독 상한(addPoison) · parryCut 흘리기 감소분 빼기(parryRed · setParry) · parryLow 생명력 50% 이하 흘리기 감소분(setParry) ·
+     parryBigCut 강적 · 보스 −20%p 줄이기(parryBigOf) · parryBrk 강타를 흘려 낸 붕괴(hurtPlayer) · drainP 독 흡수 회복(runSkill2) · psnFirst · psnCut 거는 독(asPsnIn) · parrySkP 흘리기 스킬이 흘려 내고 주는 피해(hurtPlayer).
+     흘려 냄 표시 p.asParT = 흘려 낸 다음 내 차례(hurtPlayer), 연이은 흘림 p.asChain(공통 흘리기에서 지움), 터뜨려 쓰러뜨림 b.asBurstK(runSkill2), onRespDisc는 ysSpend */
+  n_as_gap: { hitP: (b, p, e, o, c) => { if (b.asGapU === b.actN) return 0.1; if (p.asParT == null || p.asParT !== (b.turnIdx || 0) || !isAtkC(c)) return 0; p.asParT = null; b.asGapU = b.actN; return 0.1; } }, // 흘려 낸 틈: 흘려 낸 다음 내 차례 첫 공격(연타 · 광역은 그 공격 전체) +10%, 한 번
+  n_as_ripe: { hitP: (b, p, e) => st(e, 'poison') >= 15 ? 0.08 : 0 }, // 무르익은 독: 중독 15 이상
+  n_as_thin: { parryLow: 0.05 }, // 얇은 그림자: 생명력 50% 이하일 때 거는 흘리기 +5%p(상한 90%)
+  n_as_dodge: { parryBigCut: 0.05 }, // 피하는 몸: 강적 · 보스 −20%p → −15%p
+  n_as_drink: { drainP: 0.15 }, // 독 마시는 몸: 독 흡수 계열 회복 +15%
+  n_as_breath: { onParry: (b, p) => { const left = p.hpMax * 0.04 - (b.asBrH || 0); const v = Math.min(p.hpMax * 0.01, left); if (!(v > 0)) return; const g = fxHeal(p, v); b.asBrH = (b.asBrH || 0) + v; return g > 0 ? 1 : 0; } }, // 흘린 숨: 흘려 내면 1%, 전투마다 4%까지
+  n_as_warm: { onKill: (b, p, e) => { if (!b.asBurstK || e.pile) return; const left = p.hpMax * 0.06 - (b.asWarmH || 0); const v = Math.min(p.hpMax * 0.02, left); if (!(v > 0)) return; const g = fxHeal(p, v); b.asWarmH = (b.asWarmH || 0) + v; return g > 0 ? 1 : 0; } }, // 남은 독의 온기: 터뜨려 쓰러뜨리면 2%, 전투마다 6%까지
+  n_as_crush: { brkMul: (b, p, e) => e && st(e, 'poison') >= 10 ? 1.1 : 1 }, // 무너뜨리는 독: 중독 10 이상인 적에게 붕괴 +10%
+  n_as_edge: { parryBrk: 10 }, // 끊는 칼끝: 강타를 흘려 내면 붕괴 +25 → +35
+  n_as_crack: { hitP: (b, p, e, o) => o && o.burst && e.s && e.s.broken ? 0.2 : 0 }, // 깨진 틈 찌르기: 무너진 적에게 터뜨린 피해 +20%
+  n_as_step: { cost: (p, id) => id === 'dodge' ? -4 : 0 }, // 그림자 발: 흘리기 스태미나 −4
+  n_as_chain: { onParry: (b, p) => { p.asChain = 1; return 1; }, cost: (p, id) => id === 'dodge' && p.asChain ? -10 : 0 }, // 연이은 흘림: 흘려 낸 다음 공통 흘리기 −10(한 번)
+  n_as_mem: { psnFirst: 2 }, // 독 기억: 전투에서 처음 거는 독 +2
+  n_as_store: { psnCap: 24 }, // 독의 저장고: 중독 상한 20 → 24
+  n_as_link: { onRespDisc: (b, p) => { fxStam(p, 6); return 1; } }, // 이어진 그림자: resp 조건 할인이 들면 스태미나 +6
+  ks_as_lord: { psnCap: 30, parryCut: 0.15 }, // 독의 군주: 중독 상한 30 · 대가 흘리기 감소분 70% → 55%(공통 · 스킬)
+  ks_as_oath: { cost: (p, id) => id === 'dodge' ? -10 : 0, parrySkP: 0.15, psnCut: 0.3, hitP: (b, p, e, o, c) => c && c.skill && (skOf(p, c.id) || { fx: [] }).fx.some(f => f.k === 'parry') ? 0.15 : 0 }, // 그림자 맹세: 흘리기 스태미나 −10 · 흘리기 스킬 피해 +15% · 대가 거는 독 −30%(최소 1)
 };
+/* 사냥꾼: 이 타격 전의 추적 겹 (한 적 공격은 hurtEnemy가 겹을 먼저 올리므로 그 전 값, 광역은 올리지 않는다) */
+function hnFocusPre(b, p, e, o) { if (!p.focus || p.focus.id !== e.id) return 0; if (o && o.aoe) return p.focus.n; if (b.curSkill && b.focusKey === b.curSkill + ':' + e.id) return b.focusPre || 0; return Math.max(0, p.focus.n - 1); }
 const PSM_FX = new Map();
 function ptSmallFx(sm) { const key = (sm.brk || 0) + ':' + (sm.st || 0); if (!PSM_FX.has(key)) PSM_FX.set(key, Object.assign(sm.st ? { st: { st: PT.smallSt * sm.st } } : {}, sm.brk ? { brkMul: (() => { const m = Math.pow(1 + PT.smallBrk, sm.brk); return () => m; })() } : {})); return PSM_FX.get(key); }
