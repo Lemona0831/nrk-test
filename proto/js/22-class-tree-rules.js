@@ -1,7 +1,7 @@
 'use strict';
 /* 0.6a.2 직업 (v2: 재사용 대기 스킬, 트리, 마나 없음) */
 const isV2 = p => !!(p && BUILDS[p.build] && BUILDS[p.build].v2);
-const CLASS_KEYS = () => Object.keys(BUILDS).filter(k => !BUILDS[k].tut && !BUILDS[k].soon && unlOpen(k)); // 고를 수 있는 직업 (수련장 견습생, 만드는 중인 직업, 아직 열리지 않은 숨겨진 직업 제외)
+const CLASS_KEYS = () => Object.keys(BUILDS).filter(k => !BUILDS[k].tut && !BUILDS[k].soon && unlOpen(k) && !(typeof HIDDEN_LOCK !== 'undefined' && HIDDEN_LOCK && typeof UNLOCK !== 'undefined' && UNLOCK[k])); // 고를 수 있는 직업 (수련장 견습생, 만드는 중인 직업, 아직 열리지 않은 숨겨진 직업 제외)
 const ALL_CLASS_KEYS = () => Object.keys(BUILDS).filter(k => !BUILDS[k].tut && !BUILDS[k].soon); // 기록 · 결과 보기용(잠긴 직업도)
 /* 숨겨진 직업 해금 (10월 7일): 계정 셈과 열림 (data/classes.js UNLOCK) */
 const unlLocked = () => typeof UNLOCK === 'undefined' ? [] : Object.keys(UNLOCK).filter(k => BUILDS[k] && !BUILDS[k].soon && !unlOpen(k));
@@ -21,7 +21,7 @@ function unlAdd(b, key, n) {
   if (b && b.ctx && (b.ctx.tut || b.ctx.scen || b.ctx.test)) return;
   const U = unlData(); U.c[key] = (U.c[key] || 0) + (n || 1);
   for (const k of Object.keys(UNLOCK)) {
-    const L = UNLOCK[k]; if (U.open[k] || !BUILDS[k] || BUILDS[k].soon) continue;
+    const L = UNLOCK[k]; if (U.open[k] || !BUILDS[k] || BUILDS[k].soon || (typeof HIDDEN_LOCK !== 'undefined' && HIDDEN_LOCK)) continue; // 0.8.0: 셈만 쌓고 문은 열지 않는다
     if ((L.need || []).some(x => (U.c[x.c] || 0) >= x.n)) { U.open[k] = Date.now(); (U.news = U.news || []).push(k); if (b) logp(b, 'crit', L.open || '숨겨진 직업이 열렸습니다'); toast(L.open || '숨겨진 직업이 열렸습니다'); }
   }
   saveLocal();
@@ -45,17 +45,21 @@ const poolOk = (p, k) => !(isV2(p) && YS_OFF.includes(k)) && !(isV2(p) && V2_OFF
    라운드(b.ysR) = 내 차례 시작부터 다음 내 차례 시작 전까지(playerAct가 차례의 첫 행동에서 센다). 전투마다 1번(once)인 스킬은 쓰면 그 전투 동안 p.cd[id] = CD_USED로 남는다(p.cd는 이 표시에만 쓴다).
    🔄 쿨타임 당기기 · 처치 다시 쓰기는 "유산 +1, 라운드에 한 번"으로 바꿨다(1차 시제품 변환, ysRefund). 장비의 쿨타임 효과는 ysItem(라운드에 한 번) */
 const CD_USED = 999;
-function resetCharges(p) { p.cd = {}; p.cdJust = null; p.hsAt = {}; p.ys = ysStartOf(p); p.pbuf = null; p.dodgeRed = 0; p.dodgeOn = null; if (p.build === 'spellblade') { p.sbLast = null; p.sbRun = 0; p.edge = null; } if (p.build === 'bloodmage') p.payCut = []; if (p.build === 'hunter') { p.bbuf = null; p.hnLastT = null; p.hnPass = 0; p.hnAside = 0; } if (p.build === 'assassin') { p.asParT = null; p.asChain = 0; } } // 10월 18일 0.8.0 5단계 암살자: 흘려 냄 표시 · 연이은 흘림은 전투마다 새로 // 0.8.0 5단계 사냥꾼: 기본 공격 버프 · 직전에 친 적은 전투마다 새로 // 마검사: 직전 종류 · 이어진 교대 · 칼은 전투마다 새로. 숨겨진 직업 3: 값 깎기도
+function resetCharges(p) { p.cd = {}; p.cdJust = null; p.hsAt = {}; p.ys = ysStartOf(p); p.pbuf = null; p.dodgeRed = 0; p.dodgeOn = null; if (p.build === 'spellblade') { p.sbLast = null; p.sbRun = 0; p.edge = null; p.sbSt = {}; } if (p.build === 'bloodmage') p.payCut = []; if (p.build === 'hunter') { p.bbuf = null; p.hnLastT = null; p.hnPass = 0; p.hnAside = 0; } if (p.build === 'assassin') { p.asParT = null; p.asChain = 0; } } // 10월 18일 0.8.0 5단계 암살자: 흘려 냄 표시 · 연이은 흘림은 전투마다 새로 // 0.8.0 5단계 사냥꾼: 기본 공격 버프 · 직전에 친 적은 전투마다 새로 // 마검사: 직전 종류 · 이어진 교대 · 칼은 전투마다 새로. 숨겨진 직업 3: 값 깎기도
 const ysNow = p => p.ys == null ? YUSAN.start : p.ys;
 /* 유산 더하기 (상한까지). src: turn · resp · refund · item · flask. g = 실제로 든 양(0이면 상한에 막혀 버려짐) */
 function ysAdd(b, n, src, why) {
-  const p = b.p; if (!isV2(p) || b.over) return 0; p.ys = ysNow(p); const y0 = p.ys; const g = Math.max(0, Math.min(n, ysCapOf(p) - p.ys)); p.ys += g;
+  const p = b.p; if (!isV2(p) || b.over) return 0; p.ys = ysNow(p); const y0 = p.ys; const g = p.sbSt && p.sbSt.fireBody ? 0 : Math.max(0, Math.min(n, ysCapOf(p) - p.ys)); p.ys += g; // 0.8.0 M5-0 불의 몸: 그동안 유산 0
   if (b.rec) b.rec.push({ k: 'ys', t: r1(b.t), src, why, n, g, ys: p.ys, r: b.ysR || 0 });
   if (g > 0) logp(b, 'good', '유산 ' + y0 + ' → ' + p.ys + ' (+' + g + ', ' + why + ')'); // 10월 16일: 앞 → 뒤 값으로 (차례 충전도 적는다)
   return g;
 }
 /* 대응 +1: 라운드에 한 번(다섯 수단이 한도를 함께 쓴다). 상한에 막혀도 그 라운드의 대응으로 센다 */
-function ysResp(b, why) { const g = ysResp0(b, why); if (b && !b.over && isV2(b.p) && b.p.build === 'elementalist') elCutResp(b, why); return g; } // 10월 18일 0.8.0 5단계(원거리 초안 10절 결정 5): 끊어진 영창은 대응 한도와 따로(받은 대응 뒤에 +1)
+function ysResp(b, why) { const R = b ? (b.ysR || 0) : 0, c0 = b && b.ysRespR === R ? (b.ysRespC || 0) : 0, e0 = b ? (b.elCutN || 0) : 0; const g = ysResp0(b, why); if (b && !b.over && isV2(b.p) && b.p.build === 'elementalist') elCutResp(b, why); if (b && b.ysRespR === R && (b.ysRespC || 0) > c0) ysChanResp(b, why, (b.elCutN || 0) > e0); return g; }
+/* 방향별 유산 통로 (0.8.0 M4, 10월 19일 만든 사람 Y4): 통로 큰 각인(ysChan)의 이유로 대응 충전을 실제로 받았으면(라운드 공유 한도 안) 유산 +1 더, 각인마다 전투에 YS_CHAN.max번.
+   원소술사 끊어진 영창이 같은 무너뜨리기로 이미 +1을 줬으면 더하지 않는다(겹침 막기) */
+const YS_CHAN = { max: 2 };
+function ysChanResp(b, why, elFired) { if (!b || b.over || !isV2(b.p)) return 0; let n = 0; for (const [k, f] of fxList(b.p)) { if (!f.ysChan || !f.ysChan.includes(why) || (elFired && why === '무너뜨리기')) continue; b.ysChanN = b.ysChanN || {}; if ((b.ysChanN[k] || 0) >= YS_CHAN.max) continue; b.ysChanN[k] = (b.ysChanN[k] || 0) + 1; fxHit(k); n += ysAdd(b, 1, 'resp', (KS_LIST[k.replace(/^pn_/, '')] || {}).n || k); } return n; } // 10월 18일 0.8.0 5단계(원거리 초안 10절 결정 5): 끊어진 영창은 대응 한도와 따로(받은 대응 뒤에 +1)
 function ysResp0(b, why) { if (!b || !isV2(b.p) || b.over) return 0; const p = b.p, R = b.ysR || 0; const mx = 1 + fxVal(p, 'ysRespMax', 0, (a, v) => a + v); // 10월 16일 0.8.0 2단계: 큰 각인 겹 대응(라운드에 2번) · 빈손의 맹세(+2) · 넘친 숨(버려지면 다음 차례 +1)
   if (b.ysRespR === R && (b.ysRespC || 1) >= mx) return 0; if (b.ysRespR !== R) { b.ysRespR = R; b.ysRespC = 0; } b.ysRespC = (b.ysRespC || 0) + 1; b.ysRespLast = R;
   const n = YUSAN.resp + fxVal(p, 'ysRespPer', 0, (a, v) => a + v); const g = ysAdd(b, n, 'resp', why); if (g < n && !b.ysOvfUsed && fxFlag(p, 'ysOverflowBack')) { b.ysOvfUsed = 1; b.ysOvfPend = 1; } if (g < n && fxFlag(p, 'respWard')) { const w = addWard(b, p, 6, undefined, true); if (w > 0) logp(b, 'good', '막아 든 숨. 버려진 대응이 보호막 +' + r1(w)); } return g; } // 0.8.0 5단계 파수꾼 막아 든 숨: 버려지는 대응 충전 → 보호막 6 (라운드 한도는 대응과 같다)

@@ -68,7 +68,7 @@ function vKsPick(run) {
    단계: i 안내(옮기기만) → p 패시브 → k 큰 각인(받을 것이 있으면) → a 액티브 · 장착 → 확정. 다음 단계로 넘어가면 앞 단계는 되돌릴 수 없다. 닫기 버튼이 없다 */
 function allocBegin(run, mode) { run.alloc = { mode, step: mode === 'mig' ? 'i' : 'p' }; G.sheet = null; openSheet('alloc', { first: mode === 'create' ? 1 : 0 }); }
 function migBegin(cur) {
-  treeMigrate08(cur); G.run = cur; consFix(cur); ptInit(cur); ptSync(cur); applyGear(cur); G.b = null; G.sel = null; G.scr = cur.phase === 'clearsv' ? 'survey' : cur.phase || 'run';
+  treeMigrate08(cur); G.run = cur; consFix(cur); ptInit(cur); atMigrateM5(cur); { const kn = ksMigrateM4(cur); if (kn) toast('큰 각인 자리가 바뀌어 ' + kn + '개를 돌려받았습니다. 다시 고를 수 있습니다'); } ptSync(cur); applyGear(cur); G.b = null; G.sel = null; G.scr = cur.phase === 'clearsv' ? 'survey' : cur.phase || 'run';
   allocBegin(cur, 'mig'); render();
 }
 function allocNext(run) {
@@ -87,7 +87,7 @@ function allocConfirm(run, quiet) {
   if (A.mode === 'create') {
     const original = clone(run); delete run.alloc; treeSync(run); const p = run.p; p.hp = p.hpMax; p.st = p.stMax; run.tick = Date.now();
     if (!keepCur(run)) { G.run = original; render(); return; }
-    G.creating = false; G.abandonOnCreate = false; G.cre = null; G.scr = 'run'; G.sheet = null; scheduleSync(); toast('캐릭터를 만들었습니다. 첫 방 앞입니다'); render(); return;
+    G.creating = false; G.abandonOnCreate = false; G.cre = null; G.scr = 'run'; G.sheet = null; scheduleSync(); if (run.markShop) { toast('캐릭터를 만들었습니다. 앞 챕터 정산 뒤 상점입니다'); markShopOpen(run); return; } toast('캐릭터를 만들었습니다. 첫 방 앞입니다'); render(); return;
   }
   treeMigrateDone(run); applyGear(run); G.sheet = null; saveRunLocal(); saveCur(); scheduleSync();
   toast('0.8.0 트리로 옮겼습니다. 멈췄던 곳에서 이어 갑니다'); render(); if (run.gearPending) nextDrop(); else ksOpen();
@@ -129,6 +129,13 @@ function sheetParts(S) {
   } else if (S.kind === 'bagfull') {
     const it = S.data.item; title = '가방이 가득 찼습니다'; const nc = (run.cons || []).length;
     body = winSumHtml() + `<p class="lead">새 장비를 바로 장착하거나, 가방에서 하나를 비워 챙길 수 있습니다.</p>${itemDetail(it)}${shopCmp(run, it)}${rewardEquipButtons(run, it)}<button class="wide" data-a="bfskip">새 장비를 버리기</button><h4 class="bfh">또는 가방에서 하나를 버리고 새 장비를 받기</h4><div class="baglist">${run.bag.map(u => { const x = run.inv[u]; return `<div class="bagline"><div><span class="gr-${x.g}">${inm(x.tpl, x.g)}</span>${gradeTag(x.g)}<br><small class="mini">${EQ_SLOT_N[kindOf(ITEMS[x.tpl].slot) === 'ring' ? 'ring1' : ITEMS[x.tpl].slot].replace(' 1', '')} · ${baseText(x)}</small></div><button class="sm" data-a="bfdrop" data-k="${u}"${x.locked ? ' disabled' : ''}>${x.locked ? '잠김' : '이것을 버리기'}</button></div>`; }).join('')}</div>`;
+  } else if (S.kind === 'kitpick') { // 0.8.0 6단계 C: 꾸러미의 무기 · 갑옷을 셋 가운데 하나씩
+    const K = run.kitPick || { opts: {} }; const sl = ['weapon', 'armor'].find(x => K.opts[x]); title = sl ? (EQ_SLOT_N[sl] || sl) + '을(를) 고르세요' : '꾸러미';
+    body = sl ? '<p class="lead">' + (GRADE[K.opts[sl].g] || GRADE.n).n + ' 등급, 직업에 맞는 셋 가운데 하나를 고릅니다. 고르지 않은 것은 사라집니다.</p>' + K.opts[sl].tpl.map(tpl => `<div class="bagline"><div>${itemDetail(mkItem(tpl, { g: K.opts[sl].g, ch: K.ch - 1 }))}</div><button class="gold" data-a="kitpick" data-s="${sl}" data-k="${tpl}">이것으로</button></div>`).join('') : '';
+  } else if (S.kind === 'patrol') { // 0.8.0 6단계 A-6: 순찰대를 넘으면 패시브 포인트 +1(챕터에 AMBUSH.ptMax번) 또는 소모품 셋 중 하나
+    const P = run.patrolPend || { cons: [] }, used = (run.patrolPt || {})[run.ch || 1] || 0, ptOk = used < AMBUSH.ptMax; title = '순찰대를 넘었습니다';
+    body = '<p class="lead">하나를 고릅니다.</p><div class="row col">' + (ptOk ? `<button class="wide gold" data-a="patrolpick" data-k="pt" data-focus>패시브 포인트 +1 <small>(이번 챕터 ${used}/${AMBUSH.ptMax})</small></button>` : `<p class="mini">이번 챕터의 패시브 포인트는 ${AMBUSH.ptMax}번을 모두 받았습니다.</p>`)
+      + (P.cons || []).filter(id => CONS[id]).map(id => `<button class="wide" data-a="patrolpick" data-k="${id}">${CONS[id].ico} ${esc(consName({ id, g: 'n' }))}${CONS[id].d ? ` <small>${esc(CONS[id].d)}</small>` : ''}</button>`).join('') + '</div>';
   } else if (S.kind === 'consfull') {
     title = '전리품을 고르세요';
     /* 10월 14일 개편 5단계: 나온 소모품을 모두 보여 주고 뺄 것을 고른다. 자리가 모자라면 가방의 묶음을 버릴 수 있다 */

@@ -42,6 +42,7 @@ function runSkill2(b, act, tgt) {
   const hz = F('hasten'); const hzOn = hz ? (hz.on || 'use') : null; // 🔄 쿨타임 당기기 (10월 3일 만든 사람 결정 D: 갈래 규칙 대신 스킬에만 적는다)
   const par = F('parry'); if (par && tgt) { setParry(b, tgt, par.red, Object.assign({}, F('onParry') || {}, hzOn === 'parry' ? { hasten: hz.n || 1, hb: s.b } : {})); logp(b, 'sys', tgt.n + '의 다음 공격을 흘릴 준비를 한다'); }
   const sm = F('stam'); if (sm) { p.st = Math.min(p.stMax, p.st + sm.n); if (p.exhaust && p.st >= 30) p.exhaust = 0; }
+  if (p.build === 'spellblade') { sbBoundUse(b, s); if (F('searMerge')) for (const e of targets) if (e.alive && stk(e, 'bleed') > 0 && stk(e, 'ignite') > 0) sbSear(b, e, 0); } // 0.8.0 M5-0 마검사 경계 행동, 혈염은 베기 전에 걸려 있던 출혈 · 화상을 합친다
   if (s.tgt === 'self') for (const x of s.fx) if (x.k === 'st') { addS(b, p, x.s, x.n); logp(b, 'good', s.n + '. ' + (x.s === 'empower' && p.build === 'monk' ? '기' : KW_N[x.s] || x.s) + ' ' + x.n); } // 나에게 거는 상태
   for (const x of s.fx) if (x.k === 'meSt' && !x.on && !(p.build === 'monk' && (x.s === 'empower' || x.if))) { if (CF && CONF.kinds.includes(x.s)) { (p.selfBad = p.selfBad || []).push({ s: x.s, n: x.n }); continue; } /* 숨겨진 직업 2: 고행은 행동이 끝난 뒤 (cfSelfApply) */ if (BU && x.s === 'bleed') { b.selfSt = 1; const g = addS(b, p, 'bleed', x.n) || 0; b.selfSt = 0; p.selfBl = Math.min(stk(p, 'bleed'), (p.selfBl || 0) + g); logp(b, 'bad', s.n + '. 나에게 출혈 ' + x.n); b.rec.push({ k: 'bu', w: 'selfBleed', n: g }); continue; } addS(b, p, x.s, x.n); logp(b, 'good', s.n + '. ' + (KW_N[x.s] || x.s) + ' ' + x.n); } // 공격 스킬에 붙은 나에게 거는 상태 (on: 'kill'은 쓰러뜨린 뒤. 수도승의 강화(기)와 if는 피해 뒤 b.kiPend로)
   let meDrainDmg = 0; { const md = BU && s.fx.find(e => e.k === 'drain' && e.s === 'bleed' && e.me); if (md) { const n = stk(p, 'bleed'); delete p.s.bleed; p.selfBl = 0; const em = md.emp ? Math.min(4, n * md.emp) : 0; if (em > 0) addS(b, p, 'empower', em); if (md.dmg) meDrainDmg = Math.min(md.max || 10, n) * md.dmg; logp(b, n > 0 ? 'good' : 'sys', n > 0 ? s.n + '. 내 출혈 ' + n + '을(를) 거둔다' + (em ? '. 강화 ' + em : '') + (meDrainDmg ? '. 피해 +' + meDrainDmg : '') : s.n + '. 거둘 내 출혈이 없다'); b.rec.push({ k: 'bu', w: 'meDrain', n }); } } // 내 출혈 지우기 (피를 바치는 일격 · 마지막 숨)
@@ -118,7 +119,7 @@ function runSkill2(b, act, tgt) {
     if (lx && (lx.me ? p.hp <= p.hpMax * lx.hp : e.hp <= e.hpMax * lx.hp)) base *= lx.mul; if (bx && e.s.broken) base *= bx.mul; if (gx && isBig(e)) base *= gx.mul; if (chx && e.s.chill) base *= chx.mul; if (kwxF && preKw[e.id][kwxF.s] > 0) base *= kwxF.mul; // 마무리(생명력 낮음), 붕괴한 적, 큰 적, 둔화된 적 (겹치면 곱한다)
     if (sld && !preBrk[e.id]) base = 0; // 0.8.0 5단계 산사태: 무너지지 않은 적에게는 피해 대신 붕괴(아래)
     const ev0 = !!(e.evading && !multi); let hitE = false; // 몸 낮추기로 피했는가 (수도승: 터뜨린 기를 돌려준다)
-    let dealt = 0; if (base > 0) { dealt = hurtEnemy(b, e, outDmg(b, base, {}), { single: multi ? 0 : 1, aoe: multi ? 1 : 0, melee: s.tgt === 'melee' || s.tgt === 'front' ? 1 : 0, noIgn: bo && h === 0 ? 1 : 0, leechBleed: BU && h === 0 && s.tgt === 'melee' ? stBl : 0, label: s.n }); tot += dealt; hitE = !(ev0 && !e.evading); if (hitE) kiHit = true; if (hitE && h === 0 && meIf && preCh[e.id] > 0) { kiIf++; if (st(e, 'weak') > 0) kiIfCW++; } }
+    let dealt = 0; if (base > 0) { dealt = hurtEnemy(b, e, outDmg(b, base, {}), { single: multi ? 0 : 1, aoe: multi ? 1 : 0, melee: s.tgt === 'melee' || s.tgt === 'front' ? 1 : 0, noIgn: bo && h === 0 ? 1 : 0, leechBleed: BU && h === 0 && s.tgt === 'melee' ? stBl : 0, label: s.n }); tot += dealt; hitE = !(ev0 && !e.evading) || dealt > 0; if (hitE) kiHit = true; /* 0.8.0 6단계: 몸 낮춘 적도 절반은 맞는다 */ if (hitE && h === 0 && meIf && preCh[e.id] > 0) { kiIf++; if (st(e, 'weak') > 0) kiIfCW++; } }
     if (sbE && h === 0) sbEdgeSee(sbE, e, dealt); // 칼: 고른 적이 맞았는지 (빗나가면 처음 피해를 받은 적)
     if (base > 0 && !e.alive) { killed++; if (BU) { if (h === 0) buEat(e, true); buKill(e); if (cr && h < hits - 1 && targets.length === 1) { const nx = buCarry(b, act, e); if (nx) { targets[0] = nx; logp(b, 'good', '남은 타격이 ' + nx.n + '에게 이어진다'); } } } if (ksp && h === 0) sbKillSpread(b, e, preKw[e.id].bleed, ksp); if (spV && !e.killPaid) { e.killPaid = 1; const n = Math.min(BLOOD.spreadKillMax, Math.ceil((prePo[e.id] || 0) * (spV.per || 1))); if (n > 0) bmSpread(b, e, n, spGot); } continue; }
     if (kb && kb.brk && h === 0 && hitE && e.alive && kiTake > 0) addBreak(b, e, kiTake * kb.brk); // 터뜨린 기 1마다 붕괴
@@ -159,13 +160,13 @@ function runSkill2(b, act, tgt) {
     if (gr && gr.s === 'bleed') { const n0 = stk(e, 'bleed'); const goal = Math.min(KW.bleed, Math.ceil(n0 * gr.mul) + (gr.add || 0)); if (goal > n0) addS(b, e, 'bleed', goal - n0); logp(b, 'good', e.n + '의 상처가 벌어진다. 출혈 ' + n0 + ' → ' + stk(e, 'bleed')); continue; } // 출혈 키우기 (숨겨진 직업 1)
     if (gr) { const n0 = st(e, 'poison'); const add = Math.round(n0 * (gr.mul - 1)) + (gr.add || 0); const got = addPoison(b, e, add, 1, capOver); logp(b, 'good', e.n + '의 독이 끓어오른다. 중독 ' + n0 + ' → ' + st(e, 'poison') + (got < add ? ' (상한)' : '')); }
     if (bu) {
-      if (e.evading && !multi) { e.evading = 0; logp(b, 'sys', e.n + '이(가) 몸을 틀어 피한다. 독은 터지지 않고 남는다'); continue; } // 10월 7일: 몸 낮춘 적에게 터뜨리면 중독이 피해 없이 사라지던 것을 고침
+      let evH = 0; if (e.evading && !multi) { e.evading = 0; e.evHitA = b.actN; evH = 1; logp(b, 'sys', e.n + '이(가) 몸을 틀어 독이 절반만 터진다'); } // 0.8.0 6단계 A-7: 몸 낮춘 적은 독 격발 50%(전에는 터지지 않음)
       if (bu.pre) addPoison(b, e, bu.pre, 1, capOver); // 터뜨리기 전에 거는 중독 (독 격발: 이 갈래만으로도 돌게)
       const n = st(e, 'poison'); if (n <= 0) { logp(b, 'sys', e.n + '에게 터뜨릴 중독이 없다'); continue; }
-      const take = bu.half ? Math.ceil(n / 2) : bu.top ? Math.min(bu.top, n) : n;
+      const take0 = bu.half ? Math.ceil(n / 2) : bu.top ? Math.min(bu.top, n) : n; const take = evH ? Math.ceil(take0 / 2) : take0;
       const low = exe && e.hp <= e.hpMax * exe.hp; const mul = (low ? exe.mul : (bu.mul || 1)) * (gx && isBig(e) ? gx.mul : 1);
       const total = (poisonTotal(n) - poisonTotal(n - take)) * mul * triggerDamageMul(p);
-      const left = (bu.top || bu.half) ? n - take : Math.floor(n * (bu.keep || 0));
+      const left = (bu.top || bu.half || evH) ? n - take : Math.floor(n * (bu.keep || 0));
       if (left > 0) e.s.poison.stacks = left; else delete e.s.poison;
       logp(b, 'crit', (low ? '숨통을 끊으러 든다. ' : '') + e.n + '의 독이 터진다. 중독 ' + take + (left ? ' (남은 중독 ' + left + ')' : ''));
       b.asBurstK = 1; tot += hurtEnemy(b, e, outDmg(b, total, {}), { single: multi ? 0 : 1, aoe: multi ? 1 : 0, melee: s.tgt === 'melee' ? 1 : 0, burst: 1, label: s.n }); b.asBurstK = 0; // 10월 18일 0.8.0 5단계 암살자: 터뜨린 피해(깨진 틈 찌르기 o.burst) · 터뜨려 쓰러뜨림(남은 독의 온기 b.asBurstK)
@@ -217,12 +218,45 @@ function sbAltMerge(s, b) { const L = s.fx.filter(e => e.k === 'alt' && b.sbAlt 
 function sbKindOf(p, id, act) { if (p.build !== 'spellblade') return null; if (id === 'basic' || id === 'heavy') return 'cut'; return act && act.v2 && act.s && act.s.kind || null; }
 function sbBegin(b, id, act, tgt) {
   const p = b.p; const k = sbKindOf(p, id, act); b.sbK = k; b.sbAlt = false; b.sbRunNow = 0; b.sbRun2 = 0; b.sbAltFx = null; b.sbEdgeDone = 0; b.sbWardSpentAll = false; if (!k) return;
+  b.sbNoAlt = act && act.v2 && act.s && skCost(act.s) === 1 ? 1 : 0; if (b.sbNoAlt) return; // 0.8.0 M5-0(10월 19일 만든 사람): 비용 1 스킬은 교대로 치지 않는다(교대 보호막 · 할인 · 이어진 교대 횟수 모두 제외, 직전 종류도 그대로). 칼에 싣기 · 칼날은 그대로
   b.sbAlt = !!p.sbLast && k !== p.sbLast; b.sbRunNow = b.sbAlt ? (p.sbRun || 0) + 1 : 0;
 }
+/* ===== 0.8.0 M5-0 마검사 경계 (10월 19일 만든 사람, 문장 그대로): 혈염(혈인 × 염검) · 죄인의 피(혈인 × 마갑) · 유산의 불(마갑 × 염검) =====
+   p.sbSt = { blaze 겁화 남은 차례, fireBody 불의 몸 남은 차례, heatNext 다음 기본 공격 ×, emberMail 잿불 갑주, film 피막(이번 차례), sinWall 죄인의 벽 }. 효과 목록(fxList)에 IFX_SB로 들어간다 */
+/* 경계 숫자(SB_BOUND)는 값 식과 함께 data/skillkit.js에 있다 */
+const sbIsCut = (p, c) => !!c && (c.id === 'basic' || c.id === 'heavy' || (SK2[c.id] && SK2[c.id].kind === 'cut'));
+const sbBH = c => !!c && (c.id === 'basic' || c.id === 'heavy');
+const IFX_SB = {
+  blaze: { hitP: () => SB_BOUND.blazeHit, inP: (b, p, o) => !o.dot ? -SB_BOUND.blazeIn : 0, onHit: (b, p, e, o, c) => { if (!sbIsCut(p, c) || !e.alive) return; return sbSear(b, e, SB_BOUND.blazeSear) ? 1 : 0; } },
+  fireBody: { hitP: (b, p, e, o, c) => sbBH(c) ? SB_BOUND.bodyMul : 0, onHit: (b, p, e, o, c) => { if (!sbBH(c) || !e.alive) return; addS(b, e, 'ignite', SB_BOUND.bodyIgn); return 1; }, noIgnite: 1 },
+  heatNext: { hitP: (b, p, e, o, c) => c && c.id === 'basic' ? SB_BOUND.heatMul - 1 : 0, onHit: (b, p, e, o, c) => { if (c && c.id === 'basic' && p.sbSt) { p.sbSt.heatNext = 0; return 1; } } },
+  emberMail: { onHit: (b, p, e, o, c) => { if (!sbBH(c) || !e.alive || !(p.ward > 0)) return; addS(b, e, 'ignite', SB_BOUND.emberIgn); return 1; } },
+  ashNext: { onHit: (b, p, e, o, c, d) => { if (!c || c.id !== 'basic' || !p.sbSt) return; p.sbSt.ashNext = 0; const fr = alive(b).filter(x => x !== e && x.row === 'front'); for (const x of fr) { hurtEnemy(b, x, Math.max(1, (d || 0) * SB_BOUND.ashMul), { src: p, ash: 1 }); if (x.alive) addS(b, x, 'ignite', SB_BOUND.ashIgn); } if (e.alive) addS(b, e, 'ignite', SB_BOUND.ashIgn); logp(b, 'good', '잿불의 각인: 기본 공격이 전열에 불길로 터진다'); return 1; } },
+};
+/* 승부수의 보호막(죄인의 벽 3배 · 불의 몸 유산당 8)은 직업 보호막 상한을 넘겨 쌓는다(문장 그대로) */
+const sbWardRaw = (p, n) => { const w0 = p.ward || 0; p.ward = w0 + Math.max(0, n); return p.ward - w0; };
+/* 나에게 쓰는 경계 행동 */
+function sbBoundUse(b, s) {
+  const p = b.p; p.sbSt = p.sbSt || {}; const F = k => s.fx.find(e => e.k === k);
+  if (F('sbBlaze')) { const w = p.ward || 0; p.ward = 0; p.sbSt.blaze = F('sbBlaze').n || 3; logp(b, 'good', '피와 화염이 몸을 감싼다. ' + p.sbSt.blaze + '차례 동안 베기마다 혈염, 주는 피해 +' + Math.round(SB_BOUND.blazeHit * 100) + '%' + (w ? ' (보호막 ' + r1(w) + ' 소실)' : '')); }
+  const wp = F('wardPer'); if (wp) { const k = alive(b).filter(e => stk(e, wp.s) > 0).length; const g = k ? addWard(b, p, wp.n * k) : 0; logp(b, 'good', '피의 갑주: 출혈 걸린 적 ' + k + ' → 보호막 +' + r1(g)); }
+  if (F('sbFilm')) { p.sbSt.film = 1; logp(b, 'good', '피막: 이번 차례 보호막으로 받아낸 피해의 ' + Math.round(SB_BOUND.filmPer * 100) + '%가 그 적에게 출혈로 간다'); }
+  const sw = F('sbSinWall'); if (sw) { const pay = Math.min(Math.max(0, p.hp - 1), p.hpMax * SB_BOUND.sinPay); p.hp -= pay; const g = sbWardRaw(p, pay * SB_BOUND.sinMul); p.sbSt.sinWall = 1; logp(b, 'good', '죄인의 벽: 생명력 ' + r1(pay) + '을 바쳐 보호막 +' + r1(g)); }
+  if (F('sbHeat')) { const w = p.ward || 0; p.ward = 0; p.sbSt.heatNext = 1; logp(b, 'good', '달군 갑주: 보호막 ' + r1(w) + '을 태워 다음 기본 공격 ×' + SB_BOUND.heatMul); }
+  if (F('sbEmberMail')) { p.sbSt.emberMail = 1; logp(b, 'good', '잿불 갑주: 보호막이 남아 있는 동안 기본 공격 · 강공격에 화상 ' + SB_BOUND.emberIgn); }
+  const fb = F('sbFireBody'); if (fb) { const y = ysNow(p); p.ys = 0; const g = y ? sbWardRaw(p, y * SB_BOUND.bodyPer) : 0; p.sbSt.fireBody = fb.n || 3; delete p.s.ignite; logp(b, 'good', '불의 몸: 유산 ' + y + '을 모두 태워 보호막 +' + r1(g) + ', ' + p.sbSt.fireBody + '차례 동안 평타 ×' + (1 + SB_BOUND.bodyMul) + ' · 화상 ' + SB_BOUND.bodyIgn + ', 받는 화상 무효, 유산 0'); }
+}
+/* 보호막이 받아낼 때: 피막 → 출혈, 죄인의 벽이 깨지면 전열 출혈, 보호막이 0이 되면 잿불의 각인 */
+function sbWardHit(b, p, o, a) {
+  if (!p.sbSt) p.sbSt = {}; const src = o && o.src && o.src !== p && o.src.alive ? o.src : null;
+  if (p.sbSt.film && src && a > 0) { const n = Math.ceil(a * SB_BOUND.filmPer); addS(b, src, 'bleed', n); logp(b, 'good', '피막: ' + src.n + '에게 출혈 ' + n); }
+  if (!(p.ward > 0)) { if (p.sbSt.sinWall) { p.sbSt.sinWall = 0; for (const x of alive(b).filter(x => x.row === 'front')) addS(b, x, 'bleed', SB_BOUND.sinBleed); logp(b, 'good', '죄인의 벽이 깨져 전열 모두에게 출혈 ' + SB_BOUND.sinBleed); } if (fxFlag(p, 'ksAshBlast') && !p.sbSt.ashNext) { p.sbSt.ashNext = 1; logp(b, 'good', '잿불의 각인: 다음 기본 공격이 전열 화염 폭발'); } }
+}
+function sbTurnStart(b, p) { const S = p.sbSt; S.film = 0; for (const k of ['blaze', 'fireBody']) if (S[k]) { S[k]--; if (!S[k]) logp(b, 'sys', (k === 'blaze' ? '겁화' : '불의 몸') + '가 걷힌다'); } }
 function sbEdgeApply(b, e, mul) {
   const p = b.p; const E = p.edge; if (!E || !e || !e.alive) return; const n = Math.min(KW[E.s] || 10, Math.round(E.n * (mul || 1)) + fxAdd(p, 'edgeAdd', b, p, E.s));
-  const got = addS(b, e, E.s, n); p.edge = null; b.sbEdgeDone = 1; b.rec.push({ k: 'edge', s: E.s, n });
-  logp(b, 'good', '칼에 실린 ' + KW_N[E.s] + ' ' + n + '이(가) ' + e.n + '에게 스민다' + (got < n ? ' (상한)' : ''));
+  const got = addS(b, e, E.s, n); for (const x of E.also || []) { if (e.alive) addS(b, e, x.s, Math.min(KW[x.s] || 10, Math.round(x.n * (mul || 1)))); } p.edge = null; b.sbEdgeDone = 1; b.rec.push({ k: 'edge', s: E.s, n });
+  logp(b, 'good', '칼에 실린 ' + KW_N[E.s] + ' ' + n + (E.also || []).map(x => ' · ' + KW_N[x.s] + ' ' + x.n).join('') + '이(가) ' + e.n + '에게 스민다' + (got < n ? ' (상한)' : ''));
 }
 function sbEdgeSee(o, e, d) { // 전열 베기: 고른 적이 맞으면 그 적, 빗나가면 처음 피해를 받은 적. 쓰러지면 칼에 남는다
   if (!o.st || o.apply) return;
@@ -241,13 +275,14 @@ function sbEnd(b, act) {
   const af = b.sbAltFx; b.sbAltFx = null;
   if (af && !b.over) { const g = []; if (af.ward) g.push('보호막 +' + Math.round(addWard(b, p, af.ward))); if (af.protect) { addS(b, p, 'protect', af.protect); g.push('보호 ' + af.protect); } if (af.stam) { p.st = Math.min(p.stMax, p.st + af.stam); if (p.exhaust && p.st >= 30) p.exhaust = 0; g.push('스태미나 +' + af.stam); } if (g.length) logp(b, 'good', (af.run === 2 ? '⇄⇄ 이어진 교대: ' : '⇄ 교대: ') + g.join(', ')); }
   if (k === 'spell' && act && act.v2) { const im = act.s.fx.find(e => e.k === 'imbue' && !(e.soft && p.edge)); if (im) { if (p.edge && p.edge.s === im.s) p.edge.n = Math.max(p.edge.n, im.n); else p.edge = { s: im.s, n: im.n }; logp(b, 'good', '칼에 ' + KW_N[im.s] + ' ' + p.edge.n + '을(를) 싣는다'); } }
-  if (b.sbAlt && b.sbAltTurn !== b.turnIdx && !b.over && !b.sbWardSpentAll && !fxFlag(p, 'noAltWard')) { b.sbAltTurn = b.turnIdx; const g = addWard(b, p, ((BUILDS[p.build] || {}).altWard || 0) + fxVal(p, 'altWardAdd', 0, (a, v) => a + v), undefined, true); if (g > 0) fxRun(p, 'onAltWard', b, p); /* 10월 16일 0.8.0 2단계: 교대의 박자 · 마력 순환 · 마검 과부하 */ b.rec.push({ k: 'alt', g: r1(g) }); logp(b, 'good', '⇄ 교대: 보호막 +' + Math.round(g) + ' (' + Math.round(p.ward || 0) + '/' + wardMax(p) + ')'); fxRun(p, 'onAlt', b, p, k, b.sbRunNow); }
+  if (k === 'spell' && act && act.v2 && p.edge) { const al = act.s.fx.filter(e => e.k === 'imbue' && e.also); if (al.length) p.edge.also = al.map(e => ({ s: e.s, n: e.n })); } // 0.8.0 M5-0 핏불 싣기: 둘째 상태도 함께 싣는다
+  if (b.sbAlt && b.sbAltTurn !== b.turnIdx && !b.over && !b.sbWardSpentAll && !fxFlag(p, 'noAltWard') && !alive(b).some(x => stk(x, 'sear') > 0)) { /* 0.8.0 M5-0 혈염: 혈염 걸린 적이 있는 동안 교대 보호막 없음 */ b.sbAltTurn = b.turnIdx; const g = addWard(b, p, ((BUILDS[p.build] || {}).altWard || 0) + fxVal(p, 'altWardAdd', 0, (a, v) => a + v), undefined, true); if (g > 0) fxRun(p, 'onAltWard', b, p); /* 10월 16일 0.8.0 2단계: 교대의 박자 · 마력 순환 · 마검 과부하 */ b.rec.push({ k: 'alt', g: r1(g) }); logp(b, 'good', '⇄ 교대: 보호막 +' + Math.round(g) + ' (' + Math.round(p.ward || 0) + '/' + wardMax(p) + ')'); fxRun(p, 'onAlt', b, p, k, b.sbRunNow); }
   if (b.sbAlt && !b.over) { /* 10월 17일 보완 1: 한 차례에 두 번째 교대(교대의 박자) → 보호막 +3(마검 과부하면 없음) · 다음 스킬 비용 −1. 보완 4: 마검 과부하는 교대 셋을 이으면 다음 유산 4 스킬 −3(전투마다 1번) */
     if (b.altCntT !== b.turnIdx) { b.altCntT = b.turnIdx; b.altCnt = 0; } b.altCnt++;
     if (b.altCnt === 2 && fxFlag(p, 'altDouble')) { const g = fxFlag(p, 'noAltWard') ? 0 : addWard(b, p, SB_ALT2.ward, undefined, true); const dc = SB_ALT2.off > 0 && !(SB_ALT2.max > 0 && (b.altDiscN || 0) >= SB_ALT2.max); if (dc) { b.altDisc = 1; b.altDiscN = (b.altDiscN || 0) + 1; } b.rec.push({ k: 'alt2x', g: r1(g) }); logp(b, 'good', '⇄⇄ 한 차례 두 번 교대' + (g > 0 ? ': 보호막 +' + Math.round(g) : '') + (dc ? ', 다음 스킬 유산 −' + SB_ALT2.off : '')); }
     if (b.sbRunNow >= SB_OVER.run && !b.ovGot && fxFlag(p, 'ovDisc')) { b.ovGot = 1; b.ovDisc = 1; b.rec.push({ k: 'ovready' }); logp(b, 'good', '마검 과부하: 교대 셋. 다음 유산 4 스킬 비용 −3'); } }
   if (b.sbAlt && b.sbRunNow >= 3 && !b.over && (b.ys3N || 0) < 2 && fxFlag(p, 'alt3Ys') && ysRefund(b, '세 박자')) b.ys3N = (b.ys3N || 0) + 1; // 노드 세 박자: 이어진 교대 3번째면 유산 +1(전투마다 2번, 환급 한도 공유)
-  p.sbLast = k; p.sbRun = b.sbRun2 ? 0 : b.sbRunNow; b.sbAlt = false; b.sbRun2 = 0;
+  if (!b.sbNoAlt) { p.sbLast = k; p.sbRun = b.sbRun2 ? 0 : b.sbRunNow; } b.sbNoAlt = 0; b.sbAlt = false; b.sbRun2 = 0;
 }
 /* 수도승 자세 (stance, 10월 10일 단순화): 자세는 하나뿐이다. 내 다음 차례까지 전열 적의 직접 공격을 되받는다(받는 피해는 줄지 않는다. 줄이려면 방어). 덤은 겹치면 칸마다 큰 값.
    내 다음 차례의 첫 행동에서 지워진다. 옛 저장본의 half · max는 읽지 않는다 */

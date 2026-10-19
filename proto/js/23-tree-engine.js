@@ -38,19 +38,24 @@ function ptBuild(cls) {
       else { const sm = ptSmallOf(cls, d, lane); const xf = C && C.smallFx && C.smallFx[id]; /* 10월 17일 보완 2: 효과가 붙은 작은 노드(마검사 화력 C1 양손의 마검) */
         add(id, Object.assign(base, { kind: 'small', n: xf ? pnTxt(xf).n : ptSmallTxt(sm), d: ptSmallTxt(sm) + '.' + (xf ? ' ' + pnTxt(xf).d : '') }, sm, xf ? { fx: xf } : {})); }
     }
+    if (typeof PT_BASIC !== 'undefined' && PT_BASIC[d]) PT_POS.map(pos => N[d + pos]).filter(x => x && x.kind === 'small' && x.ring === 1 && !x.fx).slice(0, PT_BASIC[d].length).forEach((x, i) => { const k = PT_BASIC[d][i], T = pnTxt(k); delete x.stat; Object.assign(x, { fx: k, n: T.n, d: T.d, basic: 1 }); }); // 0.8.0 M4 평타 축
     const ks = C ? [C.ks[d + 'K5'], C.ks[d + 'K9']] : KS_TMP[d];
     [5, 9].forEach((r, i) => { const k = ks[i], K = KS_LIST[k]; add(d + 'K' + r, { kind: 'keystone', dir: d, ring: r === 5 ? 2 : 3, pos: { r, lane: 'C' }, cost: 0, fx: k, n: K.n, d: K.d, pay: K.pay || null, pool: K.cls ? 'class' : 'common' }); });
+    if (C && C.ks2 && C.ks2[d + 'K5b']) { const o = C.ks2[d + 'K5b'], K = KS_LIST[o.fx]; add(d + 'K5b', { kind: 'keystone', dir: d, ring: 2, pos: { r: 6, lane: 'C' }, cost: 0, fx: o.fx, n: K.n, d: K.d, pay: K.pay || null, pool: 'class', areq: o.req, bound: K.bound }); } // 0.8.0 M5-0 경계 큰 각인
   }
   PT.dirs.forEach((d, i) => {
     const nx = PT.dirs[(i + 1) % PT.dirs.length], x = p => d + p;
     link('S', x('1C')); link(x('1C'), x('2L')); link(x('1C'), x('2R')); link(x('2L'), x('3L')); link(x('2R'), x('3R')); link(x('3R'), nx + '3L');
-    link(x('3L'), x('4L')); link(x('3R'), x('4R')); link(x('4L'), x('5L')); link(x('4R'), x('5R')); link(x('5L'), x('6L')); link(x('5R'), x('6R')); link(x('K5'), x('4L')); link(x('K5'), x('4R')); link(x('6R'), nx + '6L');
+    link(x('3L'), x('4L')); link(x('3R'), x('4R')); link(x('4L'), x('5L')); link(x('4R'), x('5R')); link(x('5L'), x('6L')); link(x('5R'), x('6R')); link(x('K5'), x('4L')); link(x('K5'), x('4R')); if (N[x('K5b')]) { link(x('K5b'), x('5L')); link(x('K5b'), x('5R')); } link(x('6R'), nx + '6L');
     link(x('6L'), x('7L')); link(x('6R'), x('7R')); link(x('7L'), x('8L')); link(x('7R'), x('8R')); link(x('K9'), x('8L')); link(x('K9'), x('8R'));
   });
   for (const id in N) N[id].links.sort();
   return (PTREE[cls] = { cls, nodes: N, tmp, kind: 'p' });
 }
-/* 액티브 트리 만들기: 마검사는 ATREE_DEF(8절), 다른 직업은 지금 칸(줄 · par)으로 만든 임시 트리 (스킬 노드만, 하급 1고리 · 중급 2고리 · 상급 3고리) */
+/* 액티브 트리 만들기: ATREE_DEF. 0.8.0 M5-0(10월 19일 만든 사람 D14): 임시 트리는 폐기했다(ATREE_DEF가 없는 직업은 시작 노드만, 찍어 둔 포인트는 atMigrateM5가 돌려준다).
+   부채꼴(sec, 전면 개편 2-1): 갈래 A 0° · B 120° · C 240°, 경계 AB 60° · BC 180° · CA 300°. 행의 둘째 칸(갈래 이름)을 sec가 부채꼴로 바꾼다.
+   스킬 행 [id, 갈래, 고리, 반지름, 칸, 이웃, 비용, { requires }]: requires가 있으면 그 노드가 모두 열려야 연다(경계 입구 = 양쪽 갈래의 1고리 개시 노드) */
+const AT_SEC = { A: 0, AB: 60, B: 120, BC: 180, C: 240, CA: 300 }, AT_SEC_BOUND = ['AB', 'BC', 'CA'];
 const AT_TIER_RING = { 하급: 1, 중급: 2, 상급: 3, 궁극: 3 };
 function atBuild(cls) {
   if (ATREE[cls]) return ATREE[cls];
@@ -58,17 +63,15 @@ function atBuild(cls) {
   const add = (id, o) => { N[id] = Object.assign({ id, links: [], cost: 1 }, o); return N[id]; };
   const link = (a, b) => { if (!N[a] || !N[b]) throw new Error('atree link ' + a + '-' + b); if (!N[a].links.includes(b)) N[a].links.push(b); if (!N[b].links.includes(a)) N[b].links.push(a); };
   add('S', { kind: 'start', ring: 1, pos: { r: 0, lane: 'C' }, cost: 0, n: '시작 스킬', d: T2.starters.map(id => SK2[id] ? SK2[id].n : id).join(' · ') });
+  const secOf = {}; if (D && D.sec) for (const k in D.sec) secOf[D.sec[k]] = k;
   if (D) {
-    for (const [id, br, ring, r, lane, , ys] of D.skills) add(id, { kind: 'skill', br, ring, pos: { r, lane }, ys, n: SK2[id].n });
-    for (const [id, br, ring, r, lane, on, n, d, mod, src] of D.ups) add(id, { kind: 'upgrade', br, ring, pos: { r, lane }, on, n, d, mod, src });
+    for (const [id, br, ring, r, lane, , ys, ex] of D.skills) add(id, Object.assign({ kind: 'skill', br, ring, pos: { r, lane }, ys, n: SK2[id].n }, secOf[br] ? { sec: secOf[br] } : {}, ex && ex.requires ? { requires: ex.requires.slice() } : {}));
+    for (const [id, br, ring, r, lane, on, n, d, mod, src] of D.ups) add(id, Object.assign({ kind: 'upgrade', br, ring, pos: { r, lane }, on, n, d, mod, src }, secOf[br] ? { sec: secOf[br] } : {}));
     for (const [id, , , , , ln] of D.skills) for (const x of ln) link(id, x);
     for (const u of D.ups) link(u[0], u[5]);
-  } else { // 임시 트리 (10월 16일 0.8.0 2단계): 지금 사다리 그대로. 줄 1은 가운데와, 줄 n은 같은 갈래 줄 n−1(par)과 잇는다. 사냥꾼의 줄 건너뛰기(skip)는 쓰지 않는다
-    for (const s of (SKILLS2[cls] || []).filter(x => !x.start && AT_TIER_RING[x.tier])) { const row = (SKILLS2[cls] || []).filter(x => x.b === s.b && x.row === s.row); add(s.id, { kind: 'skill', br: s.b, ring: AT_TIER_RING[s.tier], pos: { r: s.row || 1, lane: row.length < 2 ? 'C' : row.indexOf(s) === 0 ? 'L' : 'R' }, n: s.n, tmp: 1 }); }
-    for (const id in N) { if (id === 'S') continue; const s = SK2[id]; if ((s.row || 1) === 1) link(id, 'S'); else for (const pa of (s.par || [])) if (N[pa]) link(id, pa); }
   }
   for (const id in N) N[id].links.sort();
-  return (ATREE[cls] = { cls, nodes: N, tmp: D ? 0 : 1, kind: 'a', br: T2.branches.slice() });
+  return (ATREE[cls] = { cls, nodes: N, tmp: 0, kind: 'a', br: T2.branches.slice(), sec: D && D.sec ? Object.assign({}, D.sec) : null });
 }
 /* ---- 공통 규칙 ---- */
 const ptTotal = run => PT.pts.start + PT.pts.lv * Math.max(0, (run.lv || 1) - 1) + ((run.ptree && run.ptree.bonus) || 0); // bonus: 이벤트 · 제단의 패시브 포인트(옛 능력치 1점)
@@ -77,7 +80,7 @@ const atTotal = run => AT_PTS.start + AT_PTS.lv * Math.max(0, (run.lv || 1) - 1)
 const clearsEff = run => (run.clears || 0) + (run.markCh ? run.markCh - 1 : 0); // 표식 도전은 시작 챕터 앞을 깬 것으로 친다(1-5)
 const ringOpen = (run, ring) => clearsEff(run) >= (PT.ring[ring] || 0);
 const RING_WHY = { 2: '2고리는 1챕터 보스를 이기면 열립니다', 3: '3고리는 2챕터 보스를 이기면 열립니다' };
-function ptInit(run) { if (!run.ptree) run.ptree = { own: [], free: [], ks: [], pts: ptTotal(run), log: [] }; if (!run.atree) run.atree = { own: [], pts: atTotal(run), log: [] }; if (!run.ksGot) run.ksGot = {}; if (run.ksPending == null) run.ksPending = 0; return run; }
+function ptInit(run) { if (!run.ptree) run.ptree = { own: [], free: [], ks: [], pts: ptTotal(run), log: [], ksv: 2 }; if (!run.atree) run.atree = { own: [], pts: atTotal(run), log: [], atv: 2 }; if (!run.ksGot) run.ksGot = {}; if (run.ksPending == null) run.ksPending = 0; return run; }
 const ptOpenIds = run => ['S'].concat(run.ptree.own, run.ptree.free, run.ptree.ks);
 const atOpenIds = run => ['S'].concat(run.atree.own);
 const ptSpent = run => run.ptree.own.reduce((a, id) => a + ((ptBuild(run.build).nodes[id] || {}).cost || 0), 0);
@@ -88,7 +91,8 @@ function treeWhyBuy(run, T, openIds, pts, id) {
   if (openIds.includes(id)) return '이미 열렸습니다';
   if (n.kind === 'keystone') return '큰 각인은 챕터 보상으로만 얻습니다';
   if (!ringOpen(run, n.ring)) return RING_WHY[n.ring] || '아직 열 수 없는 고리입니다';
-  if (!n.links.some(x => openIds.includes(x))) return '이웃한 노드를 먼저 열어야 합니다';
+  if (n.requires) { if (!n.requires.every(x => openIds.includes(x))) return '양쪽 갈래의 첫 노드를 먼저 열어야 합니다'; } // 0.8.0 M5-0: 경계 입구
+  else if (!n.links.some(x => openIds.includes(x))) return '이웃한 노드를 먼저 열어야 합니다';
   if (pts < (n.cost || 0)) return '포인트가 없습니다';
   return null;
 }
@@ -191,6 +195,7 @@ function skCondMet(b, s, c, tgt) {
   const p = b.p; if (c.when === 'resp') return b.ysRespLast != null && b.ysRespLast >= (b.ysR || 0) - 1;
   if (c.when === 'alt2') { if (p.build !== 'spellblade' || !s.kind) return false; const alt = !!p.sbLast && s.kind !== p.sbLast; return (alt ? (p.sbRun || 0) + 1 : 0) >= 2; }
   /* 0.8.0 5단계 내 자원 조건 (1-2절): 보유만 본다. 비용을 낼 때의 값 */
+  if ((c.when || '').includes('&')) return c.when.split('&').every(w => skCondMet(b, s, Object.assign({}, c, { when: w }), tgt)); // 0.8.0 M5-0: 두 조건 모두(경계 강화 엉긴 상처)
   const mw = /^ward>=(\d+)$/.exec(c.when || ''); if (mw) return (p.ward || 0) >= +mw[1];
   const mk = /^ki>=(\d+)$/.exec(c.when || ''); if (mk) return st(p, 'empower') >= +mk[1];
   if (c.when === 'stance') return !!(p.stance || (b.mkStHeld != null && b.mkStHeld === b.turnIdx)); // 직전 적 차례를 자세로 맞았다(내 차례 첫 행동에서 자세가 풀려도 그 차례 동안 참)
@@ -221,7 +226,7 @@ function ksPaths(run) {
 }
 function ksCands(run) {
   const T = ptBuild(run.build), { dist, par } = ksPaths(run), ch = run.ch || 1;
-  return Object.values(T.nodes).filter(n => n.kind === 'keystone' && !run.ptree.ks.includes(n.id) && ringOpen(run, n.ring) && dist[n.id] != null).map(n => {
+  return Object.values(T.nodes).filter(n => n.kind === 'keystone' && !run.ptree.ks.includes(n.id) && ringOpen(run, n.ring) && dist[n.id] != null && (!n.areq || (run.atree && run.atree.own.includes(n.areq)))).map(n => { // 0.8.0 M5-0: 경계 큰 각인은 그 경계 입구를 연 판만
     const path = []; for (let x = par[n.id]; x != null && dist[x] > 0; x = par[x]) path.unshift(x);
     return { id: n.id, dir: n.dir, d: dist[n.id], path, rk: ksHash(n.id + ':' + ((run.seed || 0) + ch)) };
   });
@@ -251,6 +256,26 @@ function ksTake(run, id) {
   const open = ptOpenIds(run); const free = c.path.filter(x => !open.includes(x)); run.ptree.free.push(...free); run.ptree.ks.push(id);
   (run.ksLog = run.ksLog || []).push({ id, free, offer: run.ksOffer.slice(), ch: run.ch || 1, room: run.room, t: Date.now() }); run.ksPending--; run.ksOffer = null; ptSync(run); return null;
 }
+/* 0.8.0 M5-0(10월 19일 만든 사람 D14): 임시 액티브 트리 폐기. 트리에 없는 노드를 찍어 둔 판은 그 포인트를 돌려주고 장착을 시작 스킬로 되돌린다(run.atree.atv = 2면 끝난 판) */
+function atMigrateM5(run) {
+  if (!run || !run.atree || run.atree.atv === 2) return 0; run.atree.atv = 2;
+  const A = atBuild(run.build); const gone = (run.atree.own || []).filter(id => !A.nodes[id]); if (!gone.length) return 0;
+  run.atree.own = run.atree.own.filter(id => A.nodes[id]); run.atree.pts = (run.atree.pts || 0) + gone.length; (run.atree.log = run.atree.log || []).push({ refund: gone.length, why: '임시 트리 폐기', t: Date.now() });
+  const T2 = TREE2[run.build] || { starters: [] }; run.skills = (run.skills || []).filter(id => A.nodes[id] || T2.starters.includes(id)); return gone.length;
+}
+/* 0.8.0 M4(10월 19일): 큰 각인 배치가 바뀌었다(KS_V1 → PT_CLS). 옛 판에서 찍어 둔 자리의 각인이 바뀌었으면(넘치는 그릇 · 결정의 칼 · 망치의 길 · 먼저 움직임 · 철벽 등)
+   그 각인과 그때 공짜로 연 길을 거두고 큰 각인 하나를 다시 고르게 한다(ksPending +1). run.ptree.ksv = 2면 끝난 판 */
+function ksMigrateM4(run) {
+  if (!run || !run.ptree || run.ptree.ksv === 2) return 0; run.ptree.ksv = 2;
+  if (typeof KS_V1 === 'undefined' || !KS_V1[run.build] || !(run.ptree.ks || []).length) return 0;
+  const T = ptBuild(run.build), old = KS_V1[run.build]; let n = 0;
+  for (const id of run.ptree.ks.slice()) {
+    if (!old[id] || !T.nodes[id] || T.nodes[id].fx === old[id]) continue;
+    run.ptree.ks = run.ptree.ks.filter(x => x !== id); const L = (run.ksLog || []).filter(x => x.id === id).pop(); if (L && L.free) run.ptree.free = run.ptree.free.filter(x => !L.free.includes(x));
+    run.ksPending = (run.ksPending || 0) + 1; run.ksOffer = null; (run.ksRefund = run.ksRefund || []).push({ id, fx: old[id], t: Date.now() }); n++;
+  }
+  return n;
+}
 /* ---- 옛 세이브 옮기기 (9절): run.tv가 2가 아니면 불러올 때 한 번. 결과는 배분을 확정할 때 저장한다(부르는 쪽) ---- */
 const TV = 2;
 const lvOfXp = xp => { let l = 1; while (l < LV_XP.length && xp >= LV_XP[l]) l++; return l; };
@@ -263,7 +288,7 @@ function treeMigrate08(run) {
   const gifts = Object.values(typeof CH_GIFT !== 'undefined' ? CH_GIFT : {}).flatMap(o => Object.values(o));
   run.awkOld = (run.awk || []).filter(a => !gifts.includes(a)); run.awk = (run.awk || []).filter(a => gifts.includes(a));
   run.ptree = { own: [], free: [], ks: [], pts: ptTotal(run), log: [] }; run.ksGot = {}; run.ksOffer = null;
-  const ce = clearsEff(run), ch = run.ch || 1; if (ce >= 1) run.ksGot.b1 = 1; if (ce >= 2) run.ksGot.b2 = 1; if (ch >= 3 && (run.room || 0) >= FLOOR_CAMP) run.ksGot.c3 = 1;
+  const ce = clearsEff(run), ch = run.ch || 1; if (ce >= 1) run.ksGot.b1 = 1; if (ce >= 2) run.ksGot.b2 = 1; if (ch >= 3 && (run.dgv === 3 ? (run.room || 0) : floor24to16(run.room || 0)) >= FLOOR_CAMP) run.ksGot.c3 = 1; /* 0.8.0 6단계: 옛 판의 층은 24층 틀이라 16층 틀로 옮겨 견준다 */
   run.ksPending = Object.keys(run.ksGot).length;
   run.treeOld = run.tree || null; run.skillsOld = (run.skills || []).slice(); run.skills = []; delete run.tree; run.atree = { own: [], pts: atTotal(run), log: [] };
   if (run.battle) { // 전투를 버리고 그 방의 처음으로 (생명력 · 스태미나 · 플라스크는 방에 들어설 때 값, 소모품은 저장된 그대로)
@@ -303,8 +328,14 @@ const IFX_NODE = {
   n_sb_bloodmail: { onKill: (b, p, e) => { if (e.pile || !(stk(e, 'bleed') || st(e, 'ignite'))) return; return addWard(b, p, 5, undefined, true) > 0 ? 1 : 0; } },
   n_sb_manamail: { onStart: (b, p) => { addWard(b, p, 6, undefined, true); return 1; } },
   n_sb_under: { inP: (b, p, o) => p.ward > 0 && !o.dot ? 0.04 : 0 },
-  ks_deep: { ysCap: 1 },
-  ks_brim: { ysCap: 2, ysTurnEven: 1 },
+  ks_sb_sear: { ksSearSpell: 1 }, ks_sb_sin: { ksSinBlock: 1 }, ks_sb_ash: { ksAshBlast: 1 }, // 0.8.0 M5-0 마검사 경계 큰 각인(js/24 addS · 방어 · js/10 sbWardHit)
+  ks_deep: { ysCap: 1, hitP: (b, p, e, o, c) => c && c.id === 'basic' ? -0.15 : 0 }, // 0.8.0 M4(D10): 대가 기본 공격 −15%
+  ks_sharp: { ysCap: -2, hitP: (b, p, e, o, c) => c && c.id === 'basic' ? 0.3 : 0, brk: (b, p, e, c) => c && c.id === 'basic' && e && e.intent && e.intent.k && e.intent.k !== 'attack' ? 10 : 0 }, // 날 선 손
+  ks_tireless: { cost: (p, id) => id === 'heavy' ? -15 : 0, cap: { life: -1 } }, // 쉬지 않는 팔
+  ks_brkbreath: { ysChan: ['무너뜨리기'] }, ks_slipbreath: { ysChan: ['흘리기', '먼저 치우기'] }, ks_blockbreath: { ysChan: ['막기'] }, // 방향별 유산 통로(ysChanResp)
+  n_bs_dmg: { hitP: (b, p, e, o, c) => c && c.id === 'basic' ? 0.04 : 0 }, n_bs_dmg2: { hitP: (b, p, e, o, c) => c && c.id === 'basic' ? 0.04 : 0 },
+  n_bs_brk: { brk: (b, p, e, c) => c && c.id === 'basic' ? 2 : 0 },
+  n_bs_st: { onHit: (b, p, e, o, c) => { if (!c || c.id !== 'basic') return; const s0 = p.st; p.st = Math.min(p.stMax, p.st + 3); return p.st > s0 ? 1 : 0; } },
   ks_double: { ysRespMax: 1, ysStart: -2 },
   ks_bare: { ysRespPer: 1, hitP: (b, p, e, o, c) => c && c.id === 'basic' ? -0.2 : 0 },
   ks_crystal: { hitP: (b, p, e, o, c) => skCostOfCur(p, c) === 4 ? 0.25 : 0 },
