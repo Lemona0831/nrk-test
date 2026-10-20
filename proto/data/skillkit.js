@@ -86,14 +86,16 @@ const skJo = n => '013678'.includes(String(n).slice(-1)) ? '을' : '를'; // 숫
    sbBlaze n차례 × 한 행동 값(K.B) × 피해 +40% + 베기 둘에 혈염(더 거는 2 + 합치기) − 잃는 보호막 − 받는 피해 +30%(적 한 방 K.B × 0.8을 n번).
    wardPer 출혈 걸린 적(평균 1.1) × n × 보호막 값. sbFilm 한 차례에 받아내는 보호막 몫(W.S) × 50%가 출혈. sbSinWall 보호막(최대 생명력 15% × 3, 기준 생명력 SB_HP) − 바친 생명력 + 깨질 때(반쯤) 전열 둘 출혈 4.
    sbHeat 기본 공격 하나 × 0.5 − 태운 보호막. sbEmberMail 보호막이 있는 동안 평타 두 번 화상 2. sbFireBody 남은 유산(평균 1) × 8 보호막 + n차례 평타 ×1.3 · 화상 2 − n차례 스킬을 못 쓰는 몫 */
-const SB_BD_K = ['searMerge', 'sbBlaze', 'wardPer', 'sbFilm', 'sbSinWall', 'sbHeat', 'sbEmberMail', 'sbFireBody', 'sbCross', 'searSpread', 'sbEcho', 'sbShackle', 'sbAshHand', 'sbCinder'];
+const SB_BD_K = ['searMerge', 'sbBlaze', 'wardPer', 'sbFilm', 'sbSinWall', 'sbHeat', 'sbEmberMail', 'sbFireBody', 'sbCross', 'searSpread', 'sbEcho', 'sbShackle', 'sbAshHand', 'sbCinder', 'sbEmberCut', 'sbFist', 'sbCounterBurn', 'sbTricolor', 'searBurst'];
+/* 보정 5 결합 칸 · 승부수 후보(추정): sbFist 전투에 기본 공격 5번 × 출혈 걸린 적일 확률 0.7 × (배율 − 1). sbCounterBurn 흘리기 성공 2번 × 화상. sbTricolor 할인 2번(전투에 두 번, 보정 5 2차 답) × 유산 1의 값(갈래 비용 2 평균의 절반 ≈ 8.3). searBurst 대상 1.5 × 혈염 보유(출혈 + 화상 몫 0.6) × 배율 */
 /* M5-0 보정 4 새 칸(추정, 측정 아님): sbCross 대상이 출혈 · 화상 중 하나를 가졌을 확률 0.8씩 × n × 상태 값. searSpread 혈염 걸린 적을 쓰러뜨릴 확률 0.35 × 곁의 적 1.5 × 혈염 보유(출혈 + 화상 몫 0.6) × 혈염 값(×1.5).
    sbEcho 보호막이 있는 동안의 베기 3번 × n. sbShackle 출혈 걸린 적의 강타를 막아 내는 일 전투에 2번 × 붕괴. sbAshHand 기본 공격 k번 × 화상. sbCinder 보호막이 깎이는 일 3번 × 전열 2 × 화상 */
 const SB_HP = 120;
 /* 경계 숫자 (엔진 js/10-skills-engine.js의 IFX_SB · sbBoundUse · sbWardHit와 값 식이 함께 읽는다). 스킬 문장(data/skills.js txt)의 숫자와 맞춰 둔다 */
 /* M5-0 마감(10월 19일 만든 사람): 문장의 꼴은 그대로, 숫자만 값 띠 하한까지 올렸다. 보정 4(10월 20일)에서 갈래 칸을 잘라 기준 평균이 오르자 다시 맞췄다(피막 130%, 잿불 갑주 화상 6). 겁화 피해 +40 → +60%, 피막 50 → 125%, 죄인의 벽 출혈 4 → 5, 달군 갑주 ×1.5 → ×2.8, 잿불 갑주 화상 2 → 5, 불의 몸 ×1.3 → ×1.8 · 화상 2 → 4 (피의 갑주 +4 → +17, 핏불 싣기 출혈 2 · 화상 2 → 3 · 4는 data/skills.js fx) */
-const SB_BOUND = { blazeHit: 0.6, blazeIn: 0.3, blazeSear: 2, filmPer: 1.3, sinPay: 0.15, sinMul: 3, sinBleed: 5, heatMul: 2.8, emberIgn: 6, bodyPer: 8, bodyMul: 0.8, bodyIgn: 4, sinBlock: 0.3, ashMul: 0.5, ashIgn: 2,
-  crossN: 4, ssPer: 1, echoN: 2, shackleBrk: 90, ashHandK: 2, ashHandIgn: 3, cinderIgn: 2 }; // M5-0 보정 4 새 칸 숫자(문장과 맞춘다)
+const SB_BOUND = { blazeHit: 0.6, blazeIn: 0.3, blazeSear: 2, filmPer: 0.75, sinPay: 0.15, sinMul: 3, sinBleed: 5, heatMul: 2.8, emberIgn: 6, bodyPer: 8, bodyMul: 0.8, bodyIgn: 4, sinBlock: 0.3, ashMul: 0.5, ashIgn: 2,
+  crossN: 4, ssPer: 1, echoN: 2, shackleBrk: 90, ashHandK: 2, ashHandIgn: 3, cinderIgn: 1, emberCutBurn: 6, fistMul: 1.5, cbIgn: 3,
+  holdPer: 0.05, holdMax: 5 }; // M5-0 보정 5 2차(만든 사람): 버팀 — 보호막 꼬리표 스킬을 쓴 전투에서 보호막을 지킨 채 차례를 넘기면 쌓이는 피해 +5%(최대 5) // M5-0 보정 4 새 칸 숫자(문장과 맞춘다)
 function skValue(s, ov) {
   if (!ov && SKK.butch && /^b_/.test(String(s.id)) && !s._bu) return skValueBu(s);
   if (!ov && String(s.id).slice(0, 2) === 'e_') return skValueElem(s);
@@ -107,7 +109,7 @@ function skValue(s, ov) {
     if (SB_BD_K.includes(e.k)) { const Sbi = SB.S.bleed[hi] + SB.S.ignite[hi], kw = SB.kw.bleed, Wv = K.ward.v; const nT = e.n || 3; const U = SB_BOUND;
       switch (e.k) {
         case 'searMerge': v += 0.6 * Sbi * kw * (1.5 - 1); break;
-        case 'sbBlaze': v += nT * K.B * U.blazeHit + 2 * (U.blazeSear * kw + 0.5 * Sbi * kw) - W.S[hi] * Wv - nT * K.B * 0.8 * U.blazeIn; break;
+        case 'sbBlaze': v += nT * K.B * (e.hit != null ? e.hit : U.blazeHit) + 2 * (U.blazeSear * kw + 0.5 * Sbi * kw) - W.S[hi] * Wv - nT * K.B * 0.8 * (e.inc != null ? e.inc : U.blazeIn); break;
         case 'wardPer': v += 1.1 * e.n * Wv; break;
         case 'sbFilm': v += W.S[hi] * U.filmPer * kw; break;
         case 'sbSinWall': v += SB_HP * U.sinPay * U.sinMul * Wv - SB_HP * U.sinPay + 0.5 * 2 * U.sinBleed * kw; break;
@@ -119,6 +121,11 @@ function skValue(s, ov) {
         case 'sbEcho': v += 3 * U.echoN * kw; break;
         case 'sbShackle': v += 2 * U.shackleBrk * K.brk; break;
         case 'sbAshHand': v += U.ashHandK * U.ashHandIgn * kw; break;
+        case 'sbEmberCut': { const bn = Math.min(U.emberCutBurn, W.S[hi]); v += bn * kw * 0.8 - bn * Wv; break; } // 태운 보호막만큼 화상(상한 10에 걸리는 몫 0.8)
+        case 'sbFist': v += 5 * K.B * 0.7 * (U.fistMul - 1); break;
+        case 'sbCounterBurn': v += 2 * U.cbIgn * kw; break;
+        case 'sbTricolor': v += 2 * 8.35; break; // 유산 1의 값 = 갈래 비용 2 평균(16.7)의 절반
+        case 'searBurst': v += 1.5 * 0.6 * Sbi * (e.mul || 2); break;
         case 'sbCinder': v += 3 * 2 * U.cinderIgn * kw; break; // 보호막 경계 판은 라운드마다 보호막을 두르고 깎인다(전투 6–8라운드)
       } continue; }
     switch (e.k) {
@@ -542,5 +549,14 @@ function skBody(s) {
   if (s.killRecharge) out.push(s.once ? '이 스킬로 적을 쓰러뜨리면 한 번 더 쓸 수 있다.' : s.krShock ? '이 행동으로 적을 쓰러뜨리면(행동 끝 열충격 포함) 유산 +1(차례마다 한 번).' : '이 스킬로 적을 쓰러뜨리면 유산 +1(차례마다 한 번).'); // krShock: 10월 18일 0.8.0 5단계 공명
   if (bu && (s.tgt === 'ranged' || s.tgt === 'all') && s.fx.some(e => e.k === 'dmg')) out.push((s.tgt === 'all' ? '후열에도 닿는다. ' : '') + '근접 공격이 아니라 흡혈은 일어나지 않는다.');
   if (s.fx.some(e => skillResourceGrows(s, e) && e.k !== 'focusBurst')) out.push((/^m_/.test(s.id) ? '이 기 추가 피해' : '이 자원 추가 피해') + '는 힘 1점마다 기준값의 1%씩 증가한다.');
+  if (s.pay) out.push('대가: ' + s.pay); // M5-0a 승부수: 대가는 따로 적어 두고(설명란은 skDescHtml이 줄을 나눈다), 글 설명에서는 끝에 붙인다
   return out.join(' ').replace(/\s+/g, ' ').trim();
+}
+/* M5-0a(10월 20일 만든 사람): 대사가 있는 스킬(승부수)의 설명란. 대사는 맨 위 따로 한 칸(명조 가운데 인용, 「」는 부채꼴 색 장식 · 위에 ✦ 가는 선, 같은 날 만든 사람 고름), 그 아래 효과 / 대가 / 대상을 줄로 나눈다.
+   대가는 색과 "대가" 글자로 구분(색만으로 구분하지 않음). 스크린리더는 "대사: …, 효과: …, 대가: …, 대상: …" 순서. 대사가 없으면 빈 문자열(부른 쪽이 원래 설명을 쓴다) */
+const SK_LINE_COL = { 혈염: '#ef5d3c', '죄인의 피': '#c23a52', '유산의 불': '#f0ac48' };
+function skDescHtml(s) {
+  if (!s || !s.line) return ''; const e = x => String(x).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+  const body = skBody(Object.assign({}, s, { pay: null })), col = SK_LINE_COL[s.b] || 'var(--gold)', who = `${SKK.TGN[s.tgt]} · ${SKK.TN[s.time]}`;
+  return `<div class="skd" style="--lc:${col}"><p class="skd-line"><span class="sr">대사: </span><span class="skd-q" aria-hidden="true">「</span>${e(s.line.replace(/^「|」$/g, ''))}<span class="skd-q" aria-hidden="true">」</span></p><div class="skd-rows"><div class="skd-r"><span class="k">효과</span><span class="v">${e(body)}</span></div>${s.pay ? `<div class="skd-r pay"><span class="k">대가</span><span class="v">${e(s.pay)}</span></div>` : ''}<div class="skd-r"><span class="k">대상</span><span class="v">${e(who)}</span></div></div></div>`;
 }

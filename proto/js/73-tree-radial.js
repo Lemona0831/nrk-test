@@ -34,7 +34,7 @@ function trdLayA(cls) {
   const laneOf = n => lane[n.pos.lane] || 0; // M5-0 보정 4(10월 20일 만든 사람): 여섯 부채꼴 60° 균등(경계 40° 철회), 갈래 · 경계가 같은 칸 각도
   const lane = D ? D.lane : { LL: -26, L: -13, C: 0, R: 13, RR: 26 }, U = D ? 80 : 44, R0 = D ? 0 : 40, SK = D ? 21 : 14, UP = 9;
   const radOf = r => r ? R0 + r * U : 0;
-  for (const id in A.nodes) { const n = A.nodes[id]; if (n.kind === 'upgrade') continue; const a = n.kind === 'start' ? 0 : brA[n.br] + laneOf(n), rad = radOf(n.pos.r), [x, y] = trdXY(a, rad); N[id] = { id, x, y, a, rad, sz: n.kind === 'start' ? (D ? 27 : 22) : SK }; }
+  for (const id in A.nodes) { const n = A.nodes[id]; if (n.kind === 'upgrade') continue; const a = n.kind === 'start' ? 0 : n.ang != null ? n.ang : brA[n.br] + laneOf(n), rad = radOf(n.pos.r), [x, y] = trdXY(a, rad); N[id] = { id, x, y, a, rad, sz: n.kind === 'start' ? (D ? 27 : 22) : SK }; } // 보정 5: 결합 칸은 정해진 각도(ang)
   const placed = Object.values(N);
   for (const id in A.nodes) {
     const n = A.nodes[id]; if (n.kind !== 'upgrade') continue; const P = N[n.on]; if (!P) continue;
@@ -65,7 +65,7 @@ function trdStP(run, id, T) {
 function trdStA(run, id) { if (id === 'S') return 'open'; if (run.atree.own.includes(id)) return 'own'; const w = atWhy(run, id); return !w ? (treeCanEdit() ? 'can' : 'near') : w === '포인트가 없습니다' ? 'near' : 'lock'; }
 const TRD_STN = { open: '열림', own: '찍음', free: '보너스로 열림', ks: '얻은 큰 각인', can: '찍을 수 있음', near: '이웃이 열림 · 포인트가 없음', view: '찍을 수 있음 · 이 창에서는 큰 각인만 고릅니다', lock: '잠김' };
 const TRD_STA = { open: '시작 스킬', own: '열림', can: '열 수 있음', near: '이웃이 열림 · 포인트가 없음', lock: '잠김' };
-const trdRingShort = r => r === 2 ? '2챕터부터' : r === 3 ? '3챕터부터' : '';
+const trdRingShort = r => r === 2 ? '1챕터 야영지부터' : r === 3 ? '2챕터 야영지부터' : ''; // M5-0 보정 5: 고리는 야영지에서 연다
 /* ---- 보기 상태 ---- */
 const trdVk = (run, mode) => mode + ':' + run.build;
 function trdView0(run, mode, L, opt) { // 처음 보기: 열린 고리까지(조금 더) 맞춘다. 큰 각인 고르기는 후보까지
@@ -169,7 +169,7 @@ function trdNodeA(run, L, id, st, o) {
   return `<g class="tn tn-${n.kind} st-${st}${rl ? ' rlk' : ''}${reqOff ? ' req' : ''}${o.sel ? ' sel' : ''}${o.idle ? ' idle' : ''}${n.kind === 'skill' && (run.skills || []).includes(id) ? ' eq' : ''}${o.isNew ? ' tn-new' : ''}" data-a="tnode" data-k="${id}" data-e="a" transform="translate(${trdF(P.x)} ${trdF(P.y)})" tabindex="${o.tab ? 0 : -1}" role="button" aria-label="${esc(lab + (rl ? ', ' + trdRingShort(n.ring) : ''))}"><title>${esc(n.n)}</title><circle class="hit" r="${Math.max(sz + 6, 13)}"/>${gl}${in1}<circle class="fr" r="${sz + 7}"/></g>`;
 }
 function trdSvg(run, mode, L, v, sel, opt) {
-  const kind = L.kind, T = L.T, ids = Object.keys(L.N), stOf = id => kind === 'p' ? trdStP(run, id, T) : trdStA(run, id), ST = {}; for (const id of ids) { ST[id] = stOf(id); if (mode === 'k' && ST[id] === 'can') ST[id] = 'view'; } // 큰 각인 고르기에서는 찍지 않는다(배분 흐름의 단계 잠금)
+  const absent = id => kind === 'a' && run.offer && atAbsent(run, id); /* M5-0 보정 5 P4: 이번 판에 없는 칸은 그리지 않는다 */ const kind = L.kind, T = L.T, ids = Object.keys(L.N).filter(id => !absent(id)), stOf = id => kind === 'p' ? trdStP(run, id, T) : trdStA(run, id), ST = {}; for (const id of ids) { ST[id] = stOf(id); if (mode === 'k' && ST[id] === 'can') ST[id] = 'view'; } // 큰 각인 고르기에서는 찍지 않는다(배분 흐름의 단계 잠금)
   const isOpen = id => ['open', 'own', 'free', 'ks'].includes(ST[id]), jn = G.tjust && G.tjust.e === kind ? G.tjust.id : null;
   const offer = mode === 'k' ? ((opt && opt.offer) || []) : [], will = {}, kp = [];
   if (mode === 'k') { // 후보마다 덤으로 열릴 길: 열린 이웃 → 길 → 큰 각인 자리
@@ -177,7 +177,7 @@ function trdSvg(run, mode, L, v, sel, opt) {
     offer.forEach(kid => { const c = ksInfo(run, kid); if (!c) return; const path = c.path.filter(x => !open.includes(x)); const first = path[0] || kid; const st0 = T.nodes[first].links.filter(x => open.includes(x)).sort()[0]; const pts = (st0 ? [st0] : []).concat(path, [kid]); kp.push({ kid, pts, on: kid === sel }); if (kid === sel) for (const x of path) will[x] = 1; });
   }
   let lk = '', lkr = '';
-  for (const l of L.links) {
+  for (const l of L.links) { if (absent(l.a) || absent(l.b)) continue;
     const A = L.N[l.a], B = L.N[l.b], oa = isOpen(l.a), ob = isOpen(l.b), rl = (T.nodes[l.a].ring > 1 && !ringOpen(run, T.nodes[l.a].ring)) || (T.nodes[l.b].ring > 1 && !ringOpen(run, T.nodes[l.b].ring));
     let c = oa && ob ? (ST[l.a] === 'free' || ST[l.b] === 'free' || ST[l.a] === 'ks' || ST[l.b] === 'ks' ? 'lk-fr' : 'lk-on') : (oa && ST[l.b] === 'can') || (ob && ST[l.a] === 'can') ? 'lk-can' : 'lk';
     if (rl && c === 'lk') c += ' lk-rl'; if (l.sat) c += ' lk-sat'; const nw = jn && (l.a === jn || l.b === jn) && oa && ob ? ' lk-new' : '';
@@ -238,19 +238,19 @@ function trdInfoA(run, id) {
   }
   if (n.kind === 'skill') {
     const s = skOf(run.p, id) || SK2[id], eq = eqd.includes(id), mk = s.kind === 'cut' ? '⚔ ' : s.kind === 'spell' ? '✦ ' : '';
-    h = `<div class="trd-ih"><b>${mk}${esc(n.n)}</b><button class="sm trd-x" data-a="tsel" data-k="" data-e="a" aria-label="설명 닫기">✕</button></div><p class="mini">스킬 · 유산 ${skCost(s)} · ${esc(n.br)} · ${n.ring}고리 · 포인트 ${n.cost}</p><p class="mini">${esc(skHead(s))}</p><p>${esc(skBody(s))}</p>`;
+    h = `<div class="trd-ih"><b>${mk}${esc(n.n)}</b><button class="sm trd-x" data-a="tsel" data-k="" data-e="a" aria-label="설명 닫기">✕</button></div><p class="mini">스킬 · 유산 ${skCost(s)} · ${esc(n.br)} · ${n.ring}고리 · 포인트 ${n.cost}</p><p class="mini">${esc(skHead(s))}</p>${skDescHtml(s) || `<p>${esc(skBody(s))}</p>`}`; /* M5-0a 승부수: 대사 칸 + 효과 / 대가 / 대상 */
     const ups = n.links.filter(x => A.nodes[x] && A.nodes[x].kind === 'upgrade');
     if (ups.length) h += `<p class="mini">강화: ${ups.map(u => esc(A.nodes[u].n) + (run.atree.own.includes(u) ? ' (열림)' : '')).join(', ')}</p>`;
     h += `<p class="trd-st st-${st}">${TRD_STA[st]}${eq ? ' · 장착' : ''}${!ringOpen(run, n.ring) ? ' · ' + trdRingShort(n.ring) : ''}</p>`;
     if (st === 'own' && edit) b += !eq && eqd.length >= EQUIP_SLOTS2 ? `<button data-a="ateq" data-k="${id}" data-e="a" aria-disabled="true" data-why="장착 칸이 가득 찼습니다. 먼저 하나를 빼 주세요">장착 칸이 가득 참 · ${eqd.length}/${EQUIP_SLOTS2}</button>` : `<button class="${eq ? '' : 'gold'}" data-a="ateq" data-k="${id}" data-e="a">${eq ? '빼기' : '장착'} · ${eqd.length}/${EQUIP_SLOTS2}</button>`;
   } else {
-    const on = SK2[n.on] || { n: n.on }, work = run.p && (run.p.aup || []).includes(id);
-    h = `<div class="trd-ih"><b>✚ ${esc(n.n)}</b><button class="sm trd-x" data-a="tsel" data-k="" data-e="a" aria-label="설명 닫기">✕</button></div><p class="mini">강화 · ${esc(on.n)}에 붙음 · ${n.ring}고리 · 포인트 ${n.cost}</p><p>${esc(n.d)}</p>`;
-    h += `<p class="trd-st st-${st}${st === 'own' && !work ? ' idle' : ''}">${TRD_STA[st]}${st === 'own' ? (work ? ' · 일함' : ' · ' + esc(on.n) + '을(를) 끼우면 일함') : ''}${!ringOpen(run, n.ring) ? ' · ' + trdRingShort(n.ring) : ''}</p>`;
+    const on = SK2[n.on] || { n: n.on }, work = run.p && (n.slot ? (run.p.aup || []).includes((run.atree.vsel || {})[id]) : (run.p.aup || []).includes(id));
+    if (n.slot) { h = `<div class="trd-ih"><b>✚ ${esc(n.n)}</b><button class="sm trd-x" data-a="tsel" data-k="" data-e="a" aria-label="설명 닫기">✕</button></div><p class="mini">변형 · ${esc(on.n)}에 붙음 · ${n.ring}고리 · 포인트 ${n.cost}</p>` + atVarHtml(run, n, st === 'own', st === 'can', edit) + `<p class="trd-st st-${st}${st === 'own' && !work ? ' idle' : ''}">${TRD_STA[st]}${st === 'own' ? (work ? ' · 일함' : ' · ' + esc(on.n) + '을(를) 끼우고 변형을 고르면 일함') : ''}${!ringOpen(run, n.ring) ? ' · ' + trdRingShort(n.ring) : ''}</p>`; }
+    else { h = `<div class="trd-ih"><b>✚ ${esc(n.n)}</b><button class="sm trd-x" data-a="tsel" data-k="" data-e="a" aria-label="설명 닫기">✕</button></div><p class="mini">강화 · ${esc(on.n)}에 붙음 · ${n.ring}고리 · 포인트 ${n.cost}</p><p>${esc(n.d)}</p>`; h += `<p class="trd-st st-${st}${st === 'own' && !work ? ' idle' : ''}">${TRD_STA[st]}${st === 'own' ? (work ? ' · 일함' : ' · ' + esc(on.n) + '을(를) 끼우면 일함') : ''}${!ringOpen(run, n.ring) ? ' · ' + trdRingShort(n.ring) : ''}</p>`; }
   }
   if (why && !(st === 'near' && !edit)) h += `<p class="mini">${esc(why)}</p>`;
   if (!edit && st !== 'own') h += `<p class="mini">${G.run && !G.creating && runOver(G.run) ? '끝난 캐릭터의 트리는 볼 수만 있습니다.' : '전투 중에는 볼 수만 있습니다.'}</p>`;
-  if (st === 'can' && edit) b = `<button class="gold" data-a="atbuy" data-k="${id}" data-e="a">열기 · 포인트 ${n.cost}</button>` + b;
+  if (st === 'can' && edit && !n.slot) b = `<button class="gold" data-a="atbuy" data-k="${id}" data-e="a">열기 · 포인트 ${n.cost}</button>` + b; // 변형 자리는 변형마다 버튼(atVarHtml)
   if (st === 'own' && allocStep(run) === 'a') b += `<button data-a="atref" data-k="${id}" data-e="a">되돌리기</button>`;
   return h + trdBtnRow(b);
 }
