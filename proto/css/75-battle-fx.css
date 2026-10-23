@@ -158,3 +158,15 @@ html.rm .fstat.st-fire{animation:none;box-shadow:0 0 10px rgba(240,172,72,.5)}
 .skd-r{display:grid;grid-template-columns:3.4em 1fr;gap:6px}
 .skd-r .k{color:var(--muted);font-size:calc(12px*var(--fs,1))}
 .skd-r.pay .k{color:#e39a8a;font-weight:700}.skd-r.pay .v{color:#e39a8a}
+/* M5-1 파수꾼 태세 · 승부수 상태(카드 모서리 글자, js/52) */
+.stt.st-wdst{color:var(--gold,#c9a24b)}.stt.st-siege{color:#a8bace}.stt.st-valor{color:#e8c25a}.stt.st-quake{color:#c98b4a}
+.fstat.st-siege{border-color:#a8bace;box-shadow:0 0 0 1px rgba(168,186,206,.5),0 0 14px rgba(168,186,206,.3)}
+.fstat.st-valor{border-color:#e8c25a;box-shadow:0 0 0 3px rgba(232,194,90,.3),0 0 0 7px rgba(232,194,90,.1)}
+/* M5-2 수도승 승부수 상태: 역천 주황 · 천망 금빛 경락 · 기 막힘(일지멸맥의 대가) 흰빛, 강화는 글자만 */
+.stt.st-yeok{color:#f0903c}.stt.st-cheon{color:#e6c060}.stt.st-noki{color:#dfe6ee}.stt.st-mkbuf{color:var(--gold,#c9a24b)}
+.fstat.st-yeok{border-color:#f0903c;box-shadow:0 0 0 2px rgba(240,144,60,.4),0 0 14px rgba(240,144,60,.3)}
+.fstat.st-cheon{border-color:#e6c060;box-shadow:0 0 0 1px rgba(230,192,96,.5),0 0 14px rgba(230,192,96,.25)}
+
+/* M5-6: 대사 · 이름 어두운 테두리 그림자(효과 위에서도 읽히게) */
+.cutin .cu-q{text-shadow:0 0 16px var(--glow),0 0 2px rgba(0,0,0,.95),0 2px 3px rgba(0,0,0,.9)}
+.cutin .cu-skill{text-shadow:0 1px 2px rgba(0,0,0,.9)}

@@ -8,12 +8,13 @@ const PT = {
   lane: { L: -12, C: 0, R: 12 },
   pts: { start: 6, lv: 2 }, // 패시브 포인트: 시작 6 + 레벨마다 2 (만든 사람 결정 10월 16일)
   ring: { 1: 0, 2: 1, 3: 2 }, // 고리가 열리는 깬 챕터 수(run.clears, 표식 도전은 markCh − 1을 더함). M5-0 보정 5: 그 전 챕터 야영지에서도 열린다(run.ringCamp, ringOpen)
-  ksN: 3, ksOffer: 3, // 큰 각인 제시: 찍은 곳에서 3칸 안, 셋
+  ksN: 3, ksOffer: 3, ksFree: 2, // 큰 각인 제시: 찍은 곳에서 3칸 안, 셋. 함께 열리는 보너스 노드는 2칸까지(M7-2: 엔진이 ksN을 읽지 않아 먼 각인까지 긴 공짜 길이 열리던 것을 고침)
   smallBrk: 0.03, smallSt: 6, // 제어 작은 노드 주는 붕괴 +3%(곱), 계승 작은 노드 스태미나 +6
 };
 /* M5-0 보정 5: 패시브 꼬리표(노드 효과 · 큰 각인 id → 꼬리표). 결합 칸 조건과 BD-9가 액티브 꼬리표와 함께 센다 */
 const PT_TAGS = { n_bs_dmg: ['기본공격연동'], n_bs_dmg2: ['기본공격연동'], n_bs_brk: ['기본공격연동'], n_bs_st: ['기본공격연동'], ks_sharp: ['기본공격연동'], n_sb_parryspell: ['흘리기'], ks_slipbreath: ['흘리기'], ks_flow: ['흘리기'] };
-const PT_BASIC = { pw: ['n_bs_dmg', 'n_bs_brk'], ag: ['n_bs_dmg2', 'n_bs_st'] }; // 0.8.0 M4: 방향마다 1고리 작은 노드 앞의 두 칸(능력치 대신 이 효과)
+const PT_BASIC = { pw: ['n_bs_dmg', 'n_bs_brk'], ag: ['n_bs_dmg2', 'n_bs_st'] };
+const PT_SKB = ['ct4L', 'ct6L', 'ct8L']; // 0.8.0 M5-7: 제어 방향 작은 노드 셋을 스킬 붕괴로(직업마다 같은 틀, BRK_RULE.basic0일 때) // 0.8.0 M4: 방향마다 1고리 작은 노드 앞의 두 칸(능력치 대신 이 효과)
 const AT_PTS = { start: 2, lv: 1 }; // 액티브 포인트: 시작 2 + 레벨마다 1(10월 17일 만든 사람 결정, 시작은 전에 1)
 /* 마검사 두 번 교대 (10월 17일 만든 사람 보완 1, 교대의 박자): 한 차례 두 번째 교대에 보호막 ward, 다음 스킬 비용 −off(바닥 1). max: 할인이 생기는 횟수의 전투당 한도(0이면 차례마다), min: 할인을 받는 스킬의 최소 유산 비용 */
 const SB_ALT2 = { ward: 3, off: 1, max: 0, min: 3 }; // 4단계 조정: min 1 → 3 (모든 다음 스킬 −1이면 1챕터 넘김이 21% → 33%로 뛰었다. 유산 3 · 4 스킬에만 걸면 24%)
@@ -52,7 +53,8 @@ const PN_TXT = {
   /* 0.8.0 M4: 화력 · 기민 1고리 작은 노드 둘씩을 평타 노드로(직업마다 같은 틀, PT_BASIC) */
   n_bs_dmg: { n: '기본 공격 피해 +4%', d: '기본 공격으로 주는 직접 피해가 4% 늘어납니다.' },
   n_bs_dmg2: { n: '기본 공격 피해 +4%', d: '기본 공격으로 주는 직접 피해가 4% 늘어납니다.' },
-  n_bs_brk: { n: '기본 공격 붕괴 +2', d: '기본 공격의 붕괴가 2 늘어납니다.' },
+  n_bs_brk: { n: '강공격 붕괴 +8', d: '강공격의 붕괴가 8 늘어납니다.' }, // M5-7: 기본 공격 붕괴 +2 → 강공격 붕괴(BRK_RULE.bsHeavy)
+  n_ct_skbrk: { n: '스킬 붕괴 +20%', d: '스킬로 주는 붕괴가 20% 늘어납니다.' }, // M5-7: 제어 2고리 중간 노드(균열 읽기 자리)
   n_bs_st: { n: '기본 공격 스태미나 +3', d: '기본 공격이 맞히면 스태미나 3을 되찾습니다.' },
   n_overflow: { n: '넘친 숨', d: '대응 충전이 상한에 막혀 버려지면 다음 내 차례 시작에 유산 +1로 돌려받습니다(전투마다 1번).' },
   n_fullvessel: { n: '가득 찬 그릇', d: '유산이 가득할 때 주는 직접 피해가 6% 늘어납니다.' },
@@ -112,7 +114,7 @@ const PN_TXT = {
   n_mk_pool: { n: '고인 기', d: '기가 상한일 때 되받기 피해 +20%.' },
   n_mk_spill: { n: '넘치는 기운', d: '되받기로 얻을 기가 상한에 막혀 버려지면 1마다 스태미나 +4.' },
   /* 0.8.0 5단계 사냥꾼 (docs/제안/0.8.0-5단계-원거리3직업-트리초안-2026-10-17.md 2-5, 10월 18일 결정) */
-  n_hn_pull: { n: '이어 당기는 활', d: '가속의 두 번째 차례에 쓰는 기본 공격의 피해가 15% 늘어나고(덧화살에도 든다), 맞히면 스태미나 +5.' },
+  n_hn_pull: { n: '이어 당기는 활', d: '연계로 빠른 행동을 쓴 차례의 기본 공격 피해가 15% 늘어나고(덧쏜 화살에도 든다), 맞히면 스태미나 +5.' }, /* M5-4: 가속의 두 번째 차례 → 연계 빠른 행동을 쓴 차례 */
   n_hn_breath: { n: '사냥감의 숨', d: '추적 3겹 이상인 적에게 주는 스킬 피해가 8% 늘어납니다.' },
   n_hn_tough: { n: '질긴 사냥꾼', d: '생명력이 30% 이하일 때 받는 직접 피해가 8% 줄어듭니다.' },
   n_hn_unavoid: { n: '피할 수 없는 것', d: '회피할 수 없는 공격(광역 · 주문 · 지속 피해)에 받는 피해가 8% 줄어듭니다.' },
@@ -124,13 +126,13 @@ const PN_TXT = {
   n_hn_aside: { n: '비켜 선 자리', d: '공격을 몸을 빼 피한 다음, 내 첫 공격의 피해가 10% 늘어납니다(한 번).' },
   n_hn_quick: { n: '날랜 시위', d: '⚡ 공격 스킬의 피해가 8% 늘어납니다.' },
   n_hn_pass: { n: '넘겨받는 추적', d: '추적 3겹 이상인 적을 쓰러뜨리면, 다음에 친 다른 적은 추적 1겹에서 시작합니다(처치마다).' },
-  n_hn_linkup: { n: '이어 쏘기 숙련', d: '연계 피해가 30%에서 38%로 늘어납니다.' },
+  n_hn_linkup: { n: '이어 쏘기 숙련', d: '연계 빠른 행동을 내 차례에 두 번까지 쓸 수 있습니다(원래 한 번).' }, /* M5-4: 연계 +30% → 빠른 행동 */
   n_hn_finale: { n: '끝맺는 연계', d: '연계로 쓴 유산 4 스킬의 피해가 12% 늘어납니다.' },
   /* 10월 18일 0.8.0 5단계 원소술사 (docs/제안/0.8.0-5단계-원거리3직업-트리초안-2026-10-17.md 3-5, 8절 결정 9–11) */
   n_el_student: { n: '불의 학도', d: '스킬의 첫 타격 피해 +3(행동마다 한 번, 배율을 모두 곱한 뒤 더함).' },
   n_el_blaze: { n: '거센 불길', d: '화상을 지우며 치는 공격(불태우기 계열)이 화상 5 이상을 지우면 그 공격의 피해가 10% 늘어납니다.' },
   n_el_frostskin: { n: '서리 껍질', d: '둔화된 적에게서 받는 직접 피해가 5% 줄어듭니다(큰 공격에도).' },
-  n_el_dull: { n: '무뎌진 칼날', d: '서리 무게가 −30%에서 −35%가 됩니다(평소 공격만).' },
+  n_el_dull: { n: '무뎌진 칼날', d: '서리 무게가 −20%에서 −25%가 됩니다.' }, // M5-5: 서리 무게 −20%(큰 공격 포함)
   n_el_coolbreath: { n: '식은 숨', d: '열충격이 일어나면 최대 생명력의 1%를 회복합니다(전투마다 5%까지).' },
   n_el_melt: { n: '녹는 서리', d: '되얼림이 발동할 때마다 최대 생명력의 1%를 회복합니다(전투마다 4%까지).' },
   n_el_chanthand: { n: '영창 끊는 손', d: '영창 중인 적에게 주는 붕괴가 10 늘어납니다.' },
@@ -162,7 +164,7 @@ const PN_TXT = {
 const KS_LIST = {
   ks_deep: { dir: 'lg', n: '깊은 샘', d: '유산 상한 +1(전투 시작 값도 +1).', pay: '기본 공격 피해 −15%.' }, // 0.8.0 M4(D10): 대가가 생겼다. 넘치는 그릇(상한 +2)은 없앴다
   /* 0.8.0 M4 (10월 19일 만든 사람 결정 D8 · Y4): 평타 축 큰 각인과 방향별 유산 통로 */
-  ks_sharp: { dir: 'pw', n: '날 선 손', d: '기본 공격 피해가 30% 늘어납니다. 예고 중인 적을 기본 공격으로 맞히면 붕괴 +10.', pay: '유산 상한 −2(전투 시작 값도 −2).' },
+  ks_sharp: { dir: 'pw', n: '날 선 손', d: '기본 공격 피해가 30% 늘어납니다. 예고 중인 적을 강공격으로 맞히면 붕괴 +10.', pay: '유산 상한 −2(전투 시작 값도 −2).' },
   ks_tireless: { dir: 'su', n: '쉬지 않는 팔', d: '강공격의 스태미나가 15 줄어듭니다.', pay: '생명력 플라스크 최대 충전 −1.' },
   ks_brkbreath: { dir: 'ct', n: '무너뜨린 숨', d: '무너뜨리기로 대응 충전을 받으면 유산 +1 더(전투마다 2번).', resp: 1 },
   ks_slipbreath: { dir: 'ag', n: '흘린 숨', d: '흘리기 · 먼저 치우기로 대응 충전을 받으면 유산 +1 더(전투마다 2번).', resp: 1 },
@@ -196,7 +198,7 @@ const KS_LIST = {
   /* 10월 18일 0.8.0 5단계 원소술사 (3-3 · 3-5, 결정 11) */
   ks_el_cut: { dir: 'ct', cls: 'elementalist', n: '끊어진 영창', d: '끊기 · 무너뜨리기 · 먼저 치우기 가운데 무엇이든 성공하면 대응 충전 +1 더(라운드 한도 밖, 전투마다 2번).', resp: 1 }, // 10월 18일 0.8.0 5단계(원거리 초안 10절 결정 5): 계기를 대응 셋으로 넓힘
   ks_el_ember: { dir: 'pw', cls: 'elementalist', n: '잿불의 길', d: '화상을 지우며 치는 공격(불태우기 계열)이 지운 화상 1마다 피해 +1 더.', pay: '열충격 피해 −30%.' },
-  ks_el_heart: { dir: 'sv', cls: 'elementalist', n: '얼음 심장', d: '서리 무게가 −30%에서 −45%가 됩니다(평소 공격만, 강타는 그대로).', pay: '내가 거는 화상 −1(최소 1).' },
+  ks_el_heart: { dir: 'sv', cls: 'elementalist', n: '얼음 심장', d: '서리 무게가 −20%에서 −35%가 됩니다(큰 공격 포함).', pay: '내가 거는 화상 −1(최소 1).' },
   /* 10월 18일 0.8.0 5단계 암살자 (4-6): 거울 짝. 독을 키우면 흘리기가 약해지고, 흘리기를 키우면 독이 약해진다. 생존 K9는 무거운 갑주(흘리기 금지) 대신 그림자 맹세 */
   ks_as_lord: { dir: 'pw', cls: 'assassin', n: '독의 군주', d: '내가 거는 중독의 상한이 20에서 30으로 늘어납니다.', pay: '흘리기 감소분 −15%p(70% → 55%, 공통 흘리기 · 흘리기 스킬 모두).' },
   ks_as_oath: { dir: 'sv', cls: 'assassin', n: '그림자 맹세', d: '흘리기의 스태미나가 10 줄고, 흘리기 스킬의 피해(흘려 내고 주는 피해 포함)가 15% 늘어납니다.', pay: '내가 거는 독 −30%(반올림, 최소 1).' },
@@ -236,7 +238,7 @@ const PT_CLS = {
       su2L: 'n_wd_will', su3R: 'n_wd_remnant', su5L: 'a_shell', su5R: 'n_wd_breath', su7L: 'a_warmth', su7R: 'a_brew',
       ct1C: 'k_wd2', ct3L: 'n_wd_shake', ct5L: 'a_gap', ct5R: 'n_wd_breakwall', ct7L: 'a_heavyhand', ct7R: 'n_shaken',
       ag3L: 'n_wd_turn', ag5L: 'a_resolve', ag5R: 'a_light', ag7L: 'a_gulp', ag7R: 'n_wd_pullhit',
-      lg2L: 'n_wd_stack', lg3R: 'n_wd_respward', lg5L: 'n_fullvessel', lg5R: 'n_wd_ready', lg7L: 'n_wd_fuel', lg7R: 'n_wd_bracewall',
+      lg2L: 'n_wd_stack', lg3R: 'n_wd_respward', lg5L: 'n_overflow', lg5R: 'n_wd_ready', lg7L: 'n_fullvessel', lg7R: 'n_wd_bracewall', // 0.8.0 M7-2 정체성 정리: 계승을 다른 직업과 같은 꼴(첫 칸 직업 각인 자리 · 직업 3 · 공용 2, 공용은 2고리 넘치는 그릇 · 3고리 가득 찬 그릇)로. 직업 5 · 공용 1에서 보호막 연료(n_wd_fuel)를 뺐다
     },
     ks: { pwK5: 'ks_sharp', pwK9: 'ks_wd_drop', ctK5: 'ks_brkbreath', ctK9: 'ks_hammer', agK5: 'ks_slipbreath', agK9: 'ks_first', lgK5: 'ks_deep', lgK9: 'ks_double', suK5: 'ks_cycle', suK9: 'ks_wd_eternal', svK5: 'ks_blockbreath', svK9: 'ks_wall' },
   },
@@ -261,7 +263,7 @@ const PT_CLS = {
       ag1C: 'k_hn3', ag3L: 'n_hn_aside', ag5L: 'a_resolve', ag5R: 'n_hn_quick', ag7L: 'a_light', ag7R: 'a_gulp',
       lg2L: 'k_hn1', lg3R: 'n_hn_pass', lg5L: 'n_overflow', lg5R: 'n_hn_linkup', lg7L: 'n_fullvessel', lg7R: 'n_hn_finale',
     },
-    ks: { pwK5: 'ks_sharp', pwK9: 'ks_hn_solo', ctK5: 'ks_brkbreath', ctK9: 'ks_hammer', agK5: 'ks_slipbreath', agK9: 'ks_first', lgK5: 'ks_deep', lgK9: 'ks_hn_chase', suK5: 'ks_cycle', suK9: 'ks_tireless', svK5: 'ks_blockbreath', svK9: 'ks_wall' },
+    ks: { pwK5: 'ks_sharp', pwK9: 'ks_hn_solo', ctK5: 'ks_brkbreath', ctK9: 'ks_hammer', agK5: 'ks_slipbreath', agK9: 'ks_flow', lgK5: 'ks_deep', lgK9: 'ks_hn_chase', /* M5-4: 기민 K9 먼저 움직임(가속) → 흘림새 */ suK5: 'ks_cycle', suK9: 'ks_tireless', svK5: 'ks_blockbreath', svK9: 'ks_wall' },
   },
   /* 10월 18일 0.8.0 5단계 원소술사 (결정 9–11 반영): docs/제안/0.8.0-5단계-원거리3직업-트리초안-2026-10-17.md 3-5. 작은 노드는 화력 지능 +2(공격 능력치).
      화력 3고리는 공용 둘만(3-2 인플레이션 막기). 큰 각인: 끊어진 영창(제어 K5) · 잿불의 길(화력 K9, 대가) · 얼음 심장(생존 K9, 대가). 무거운 갑주 · 무너뜨리는 자는 두지 않는다 */
@@ -290,9 +292,10 @@ const PT_CLS = {
     ks: { pwK5: 'ks_sharp', pwK9: 'ks_as_lord', ctK5: 'ks_brkbreath', ctK9: 'ks_hammer', agK5: 'ks_slipbreath', agK9: 'ks_first', lgK5: 'ks_deep', lgK9: 'ks_double', suK5: 'ks_cycle', suK9: 'ks_tireless', svK5: 'ks_blockbreath', svK9: 'ks_as_oath' },
   },
 };
-/* 임시 트리: 직업 갈래 각인(4-4)을 그 방향 1고리 첫 중간 노드 자리에 둔다. 도살자 벼랑 끝(k_bu2)은 6단계 큰 각인으로 합쳐질 것이라 임시 트리에 넣지 않는다 */
+/* 임시 트리: 직업 갈래 각인(4-4)을 그 방향 1고리 첫 중간 노드 자리에 둔다. 도살자 벼랑 끝(k_bu2)은 6단계 큰 각인으로 합쳐질 것이라 임시 트리에 넣지 않는다.
+   파수꾼 계승 자리는 쌓인 벽 옛 판(k_wd1)을 10월 17일 검토 1-1에서 고친 n_wd_stack이다(PT_CLS 파수꾼 lg2L과 맞춤, M7-2) */
 const PT_CLSAWK = {
-  assassin: { pw: ['k_as1'], lg: ['k_as2'], ag: ['k_as3'] }, warden: { lg: ['k_wd1'], ct: ['k_wd2'], pw: ['k_wd3'] }, hunter: { lg: ['k_hn1'], pw: ['k_hn2'], ag: ['k_hn3'] },
+  assassin: { pw: ['k_as1'], lg: ['k_as2'], ag: ['k_as3'] }, warden: { lg: ['n_wd_stack'], ct: ['k_wd2'], pw: ['k_wd3'] }, hunter: { lg: ['k_hn1'], pw: ['k_hn2'], ag: ['k_hn3'] },
   elementalist: { pw: ['k_el1'], ct: ['k_el2'], lg: ['k_el3'] }, monk: { pw: ['k_mk1'], sv: ['k_mk2'], ct: ['k_mk3'] },
   butcher: { pw: ['k_bu1'], su: ['k_bu3'] }, confessor: { su: ['k_cf1'], ct: ['k_cf2'], lg: ['k_cf3'] }, bloodmage: { pw: ['k_bm1'], su: ['k_bm2'], lg: ['k_bm3'] },
 };

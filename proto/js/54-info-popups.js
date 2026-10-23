@@ -14,16 +14,18 @@ const SDESC = {
 };
 /* 주문직의 기본 공격·강공격은 캔트립·집중 주문이다 */
 function actInfo(p, id) {
-  if (isCaster(p) && isV2(p) && id === 'basic') return CANTRIP[p.build] + '. 비용 없이 원거리 주문을 쏜다. 피해는 무기 피해의 ' + Math.round(((BUILDS[p.build] || {}).wpnMul || 1) * 100) + '%. 후열에 닿고 방패병에게 막히지 않는다. 붕괴 게이지 +10. 스태미나는 채우지 않는다.'; // 원소술사 (10월 7일)
-  if (isCaster(p) && isV2(p) && id === 'heavy') return '집중 주문. 스태미나 ' + heavyCost(p) + '. 원거리, 무기 피해의 ' + Math.round(((BUILDS[p.build] || {}).wpnMul || 1) * HEAVY_V2 * 100) + '%, 붕괴 게이지 +' + (35 + 5 * Math.floor(stat(p, 'str') / 10) + (p.eq.weapon === 'maul' ? 20 : 0)) + '. 후열에 닿는다. 느린 행동이라 빠른 칸과 주 행동을 함께 쓴다.';
+  if (isCaster(p) && isV2(p) && id === 'basic') return CANTRIP[p.build] + '. 비용 없이 원거리 주문을 쏜다. 피해는 무기 피해의 ' + Math.round(((BUILDS[p.build] || {}).wpnMul || 1) * 100) + '%. 후열에 닿고 방패병에게 막히지 않는다. ' + brkBasicTxt() + ' 스태미나는 채우지 않는다.'; // 원소술사 (10월 7일)
+  if (isCaster(p) && isV2(p) && id === 'heavy') return '집중 주문. 스태미나 ' + heavyCost(p) + '. 원거리, 무기 피해의 ' + Math.round(((BUILDS[p.build] || {}).wpnMul || 1) * HEAVY_V2 * 100) + '%, 붕괴 게이지 +' + Math.round((35 + 5 * Math.floor(stat(p, 'str') / 10) + (p.eq.weapon === 'maul' ? 20 : 0)) * (BRK_RULE.basic0 ? BRK_RULE.heavyMul : 1)) + '. 후열에 닿는다. 느린 행동이라 빠른 칸과 주 행동을 함께 쓴다.';
   if (isCaster(p) && id === 'basic') return CANTRIP[p.build] + '. 비용 없이 원거리 주문을 쏜다. 피해는 무기 피해의 90%. 후열에 닿고 방패병에게 막히지 않는다. 붕괴 게이지 +10. 스태미나는 채우지 않는다.';
   if (isCaster(p) && id === 'heavy') return '집중 주문. 스태미나 40. 원거리, 무기 피해의 160%, 붕괴 게이지 +30. 느린 행동이라 빠른 칸과 주 행동을 함께 쓴다.';
   if (isV2(p) && AINFO2[id]) return AINFO2[id](p);
-  return AINFO[id] || '';
+  return id === 'basic' ? String(AINFO.basic || '').replace('붕괴 게이지 +10.', brkBasicTxt()) : AINFO[id] || ''; // M5-7: 기본 공격 붕괴 문장은 규칙을 따른다(글자층 js/60이 문장을 덮어써도)
 }
 /* 0.6a.2 직업의 공용 행동 설명: 엔진 값에서 바로 만든다 (10월 3일: 0.6a 문장이 남아 강공격 180%, 흘리기 60%, 플라스크가 지운다고 나왔다) */
+/* M5-7: 기본 공격 붕괴 문장(규칙을 켜면 "채우지 않음") */
+const brkBasicTxt = () => BRK_RULE.basic0 ? '기본 공격은 붕괴를 채우지 않는다(반격 · 강공격 · 스킬은 채운다).' : '붕괴 게이지 +10.';
 const AINFO2 = {
-  heavy: p => '스태미나 ' + heavyCost(p) + '. 무기 피해의 ' + Math.round(heavyBase(p) / wpnDmg(p) * 100) + '%, 붕괴 게이지 +' + (35 + 5 * Math.floor(stat(p, 'str') / 10) + (p.eq.weapon === 'maul' ? 20 : 0)) + '. 강타 · 영창 · 겨누기를 모으는 적을 치면 붕괴 +' + YUSAN.heavyTele + ' 더. 느린 행동이라 빠른 칸과 주 행동을 함께 쓴다.',
+  heavy: p => '스태미나 ' + heavyCost(p) + '. 무기 피해의 ' + Math.round(heavyBase(p) / wpnDmg(p) * 100) + '%, 붕괴 게이지 +' + Math.round((35 + 5 * Math.floor(stat(p, 'str') / 10) + (p.eq.weapon === 'maul' ? 20 : 0)) * (BRK_RULE.basic0 ? BRK_RULE.heavyMul : 1)) + '. 강타 · 영창 · 겨누기를 모으는 적을 치면 붕괴 +' + YUSAN.heavyTele + ' 더. 느린 행동이라 빠른 칸과 주 행동을 함께 쓴다.',
   dodge: p => '스태미나 ' + dodgeCost(p) + '. 고른 적의 다음 공격 피해를 ' + Math.round(parryRed(p) * 100) + '% 줄인다. 그 공격이 강타였다면 그 적의 붕괴 게이지 +25. 광역 공격과 지속 피해는 흘리지 못한다. 강적·보스의 공격은 ' + Math.round(PARRY_BIG * 100) + '%p 덜 줄인다. 내 다음 차례까지 유효하다.',
   flaskL: p => '생명력을 ' + Math.round(flaskHealFrac(p) * healMul(p) * 100) + '% 채운다. 걸린 상태는 지우지 않는다. 빠른 행동이라 마신 뒤에도 주 행동을 한다.',
   flaskM: p => '마시면 막음 ' + Math.min(KW.block, 2 + fxAdd(p, 'blockAdd', p)) + ': 다음에 걸리려는 해로운 상태를 그만큼 튕겨 낸다. 이미 걸린 상태는 지우지 않는다. 빠른 행동이다.',
@@ -55,7 +57,7 @@ function infoHtml(key) {
   const b = G.b; const parts = key.split(':');
   const H = (t, body) => `<b class="pt">${esc(t)}</b>${body}`;
   const P = s => `<p>${esc(s)}</p>`;
-  if (key === 'bar:ys' && b) { const p = b.p; return H('유산 ' + ysNow(p) + '/' + ysCapOf(p), P('스킬은 유산을 씁니다(비용 2 · 3 · 4). 전투를 가득 찬 채 시작하고, 둘째 차례부터 내 차례가 시작될 때 +1 찹니다' + (YUSAN.longFrom ? '(' + (YUSAN.longFrom + 1) + '번째 차례부터는 +2)' : '') + '. 유산은 내 차례에만 씁니다.') + P('대응에 성공하면 +1, 라운드에 한 번: 방어로 받아 내기 · 흘리기 성공 · 적을 무너뜨리기 · 모으기와 영창 끊기 · 큰 공격을 모으는 적을 움직이기 전에 쓰러뜨리기.') + P('스태미나 플라스크는 전투에 한 번 유산 +1을 더 줍니다.')); } // 10월 15일 유산 1차 시제품
+  if (key === 'bar:ys' && b) { const p = b.p; return H('유산 ' + ysNow(p) + '/' + ysCapOf(p), P('스킬은 유산을 씁니다(비용 1 · 2 · 3 · 4). 전투를 가득 찬 채 시작하고, 둘째 차례부터 내 차례가 시작될 때 +1 찹니다' + (YUSAN.longFrom ? '(' + (YUSAN.longFrom + 1) + '번째 차례부터는 +2)' : '') + '. 유산은 내 차례에만 씁니다.') + P('대응에 성공하면 +1, 라운드에 한 번: 방어로 받아 내기 · 흘리기 성공 · 적을 무너뜨리기 · 모으기와 영창 끊기 · 큰 공격을 모으는 적을 움직이기 전에 쓰러뜨리기.') + P('스태미나 플라스크는 전투에 한 번 유산 +1을 더 줍니다.')); } // 10월 15일 유산 1차 시제품
   if (key === 'bar:st' && b) { const p = b.p; return H('스태미나', P('지금 강공격 ' + heavyCost(p) + ', 방어 ' + guardCost(p) + ', 흘리기 ' + dodgeCost(p) + '이 듭니다. 라운드가 끝날 때마다 10씩 차고, 스태미나 플라스크로 60을 채웁니다. 기본 공격은 스태미나를 채우지 않습니다. 0이 되면 탈진합니다.')); } /* 10월 7일: 직업마다 다른 흘리기 비용을 그대로 */
   if (parts[0] === 'tn' && G.run && G.run.atree) { // 10월 16일 0.8.0 2단계: 액티브 트리 노드
     const s = SK2[parts[1]]; if (!s) return ''; const own = s.start || G.run.atree.own.includes(s.id); const why = own ? null : atWhy(G.run, s.id); const ss = skOf(G.run.p, s.id) || s;
@@ -87,7 +89,7 @@ function infoHtml(key) {
   if (parts[0] === 'bdwell' && b) { const e = b.en.find(x => String(x.id) === parts[1]), w = e && bossDwell(e); if (!w) return ''; return H('🛡️ 버티는 중', P(w.last ? '마지막 단계입니다. 이 단계에서 ' + w.need + '번 움직이기 전에는 생명력이 1 아래로 내려가지 않습니다. 지금 ' + w.n + '번 움직였습니다.' : '단계 문턱에 닿았습니다. 이 단계에서 ' + w.need + '번 움직인 뒤 다음 단계로 넘어가고, 그때까지 문턱을 넘는 피해는 쌓아 둡니다. 지금 ' + w.n + '번 움직였습니다.') + (e.bank > 0 ? P('막힌 피해 ' + r1(e.bank) + '이(가) 쌓여 있습니다. 보스가 움직여 문이 열리면 한꺼번에 들어갑니다. 다음 문턱에 닿으면 남은 몫은 다시 쌓입니다.') : P('막힌 피해는 사라지지 않고 쌓였다가, 보스가 움직여 문이 열리면 한꺼번에 들어갑니다.')) + P('보스가 단계마다 자기 패턴을 보여 주도록 하는 규칙입니다. 단계를 넘기는 행동과 숨 고르기는 횟수에 넣지 않습니다.')); }
   if (parts[0] === 'skrise' && b) { const e = b.en.find(x => String(x.id) === parts[1]), r = e && skelRise(b, e); if (!r) return ''; return H('🦴 해골의 부활', r.no ? P('지금 ' + r.why + ' 상태라 쓰러져도 뼈 더미가 남지 않고 다시 일어서지 못합니다.') : P('쓰러지면 뼈 더미가 되고, ' + r.wait + '라운드 뒤 생명력 ' + Math.round(RISE.hp * 100) + '%로 한 번 다시 일어섭니다.' + (r.lime ? ' 석회 가루로 ' + r.lime + '라운드 늦췄습니다.' : '') + (r.charm ? ' 장비로 1라운드 늦췄습니다.' : '')) + P('화상이 걸렸거나 무너진 채 쓰러지면 일어서지 못합니다. 뼈 더미를 없애도 부활하지 않습니다.')); }
   if (parts[0] === 'cmark' && b) { const e = b.en.find(x => String(x.id) === parts[1]), m = e && consMarks(e).find(x => x[0] === parts[2]); if (!m) return ''; return H(m[1] + ' ' + m[2], P(CONS_MARK_D[m[0]](e)) + (m[0] === 'norise' ? '' : P('소모품으로 건 효과입니다.'))); }
-  if (parts[0] === 'epile' && b) { const e = b.en.find(x => String(x.id) === parts[1]); if (!e || !e.pile) return ''; return H('뼈 더미', P('앞으로 ' + e.pile.wait + '라운드 뒤 해골이 한 번 다시 일어섭니다. 그 전에 더미를 없애면 부활하지 않습니다.') + P('석회 가루를 쓰면 부활이 ' + CONS.lime.v + '라운드 늦어집니다. 남은 적이 뼈 더미뿐이면 전투가 끝납니다.')); }
+  if (parts[0] === 'epile' && b) { const e = b.en.find(x => String(x.id) === parts[1]); if (!e || !e.pile) return ''; return H('뼈 더미', P('앞으로 ' + e.pile.wait + '라운드 뒤 해골이 한 번 다시 일어섭니다. 그 전에 더미를 없애면 부활하지 않습니다.') + (CONS.lime ? P('석회 가루를 쓰면 부활이 ' + CONS.lime.v + '라운드 늦어집니다.') : '') + P('남은 적이 뼈 더미뿐이면 전투가 끝납니다.')); }
   if (parts[0] === 'st' && b) {
     const u = parts[1] === 'p' ? b.p : b.en.find(x => x.id === parts[1]); const k = parts[2]; if (!u || !u.s[k]) return '';
     if (k === 'poison') { const v = u.s.poison.stacks; return H('중독 ' + v, P(SDESC.poison) + P('다음 피해 ' + v + ', 그다음 ' + Math.max(0, v - 1) + '… 이대로 두면 앞으로 총 ' + poisonTotal(v) + ' 피해.')); }
@@ -129,6 +131,7 @@ function infoHtml(key) {
   }
   if (parts[0] === 'buff' && G.run) { const k = parts[1], S = SHRINES.find(x => x.id === k); const n = (G.run.buffs || {})[k] || 0; return H(S ? S.n : (EVBUFF[k] || [k])[0], P(S ? S.d : (EVBUFF[k] || ['', ''])[1]) + P('지금 방을 포함해 ' + n + '개 방 동안 이어집니다.')); } // 10월 5일: 브라우저 툴팁 대신 게임 설명 창
   if (parts[0] === 'sk' && SK2[parts[1]]) { const s = SK2[parts[1]]; return H(s.n, P((s.start ? '시작 스킬' : s.b + ' · ' + s.tier + ' · ' + s.row + '줄') + '. ' + skHead(s)) + (skDescHtml(s) || P(skBody(s))) + cfKwHtml(s)); } // 시험 전투의 스킬 칸
+  if (parts[0] === 'chdev') { const D = typeof G !== 'undefined' && G.b ? chDevOf(G.b) : null; if (D) return H(D.n || '', P(D.help || '')); } // A0 챕터 장치 도움말 한 줄
   if (parts[0] === 'mod' && ROOM_MODS[parts[1]]) return H(ROOM_MODS[parts[1]].n, P(ROOM_MODS[parts[1]].d));
   if (key === 'heat' && b && b.heat != null) return H('열기', P('지금 ' + Math.round(b.heat) + '/100. 이번 라운드 끝에 약 +' + heatRise(b) + '.') + P('열기가 100 이상인 채 라운드가 끝나면 ' + heatName(b) + '이(가) 붑니다. 예고가 뜬 뒤에는 내 차례가 한 번 옵니다. 그 전에 열기를 100 아래로 내리면 불지 않습니다.') + P('열기가 변할 때마다 전투 기록에 까닭이 적힙니다.'));
   if (key === 'ign' && b) return H('내 화상', P('직접 피해를 받을 때마다 화상 수만큼 피해가 더해지고 1 줄어듭니다. 예고 숫자 옆 (+화상 n)은 그 공격에 더해질 몫입니다. 한 라운드에 새로 붙는 화상은 ' + IGN_ROUND_CAP + '까지입니다.'));

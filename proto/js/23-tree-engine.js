@@ -14,9 +14,9 @@ function ptSmallOf(cls, d, lane) {
   if (d === 'sv') return { stat: { con: 2 } }; if (d === 'su') return { stat: { wil: 2 } }; if (d === 'ag') return { stat: { dex: 2 } };
   if (d === 'ct') return { sm: 'brk' }; return { sm: 'st' };
 }
-const ptSmallTxt = o => o.stat ? Object.entries(o.stat).map(([k, v]) => PT_STATN[k] + ' +' + v).join(' · ') : o.sm === 'brk' ? '주는 붕괴 +' + Math.round(PT.smallBrk * 100) + '%' : '스태미나 +' + PT.smallSt;
+const ptSmallTxt = o => o.stat ? Object.entries(o.stat).map(([k, v]) => PT_STATN[k] + ' +' + v).join(' · ') : o.sm === 'brk' ? '주는 붕괴 +' + Math.round(PT.smallBrk * 100) + '%' : o.sm === 'skb' ? '스킬 붕괴 +' + Math.round(BRK_RULE.skbS * 100) + '%' : '스태미나 +' + PT.smallSt;
 const pnTxt = k => (typeof AWK_MAP !== 'undefined' && AWK_MAP[k]) || PN_TXT[k] || KS_LIST[k] || { n: k, d: '' };
-const ptPoolHas = k => PT.dirs.some(d => PT_POOL[d].r2.includes(k) || PT_POOL[d].r3.includes(k));
+const ptPoolHas = k => k === 'n_ct_skbrk' || PT.dirs.some(d => PT_POOL[d].r2.includes(k) || PT_POOL[d].r3.includes(k)); // M5-7: 스킬 붕괴 중간 노드는 직업마다 같은 틀(공용)
 /* 패시브 트리 만들기 (2-3 틀): 방향마다 일반 15 + 큰 각인 자리 2, 다리 R3 → 시계 방향 이웃 L3 · R6 → 이웃 L6 */
 function ptBuild(cls) {
   if (PTREE[cls]) return PTREE[cls];
@@ -34,8 +34,9 @@ function ptBuild(cls) {
     for (const pos of PT_POS) {
       const r = +pos[0], lane = pos[1], id = d + pos, k = content[pos];
       const base = { dir: d, ring: ptRingOf(r), pos: { r, lane } };
-      if (k) { const T = pnTxt(k); add(id, Object.assign(base, { kind: 'notable', fx: k, n: T.n, d: T.d, pool: ptPoolHas(k) ? 'common' : 'class' })); }
-      else { const sm = ptSmallOf(cls, d, lane); const xf = C && C.smallFx && C.smallFx[id]; /* 10월 17일 보완 2: 효과가 붙은 작은 노드(마검사 화력 C1 양손의 마검) */
+      if (k && C && BRK_RULE.basic0 && id === 'ct5L' && k === 'a_gap') content[pos] = 'n_ct_skbrk'; /* M5-7: 제어 2고리 중간 노드 균열 읽기 → 스킬 붕괴 */
+      if (content[pos]) { const T = pnTxt(content[pos]); const k = content[pos]; add(id, Object.assign(base, { kind: 'notable', fx: k, n: T.n, d: T.d, pool: ptPoolHas(k) ? 'common' : 'class' })); }
+      else { const sm = C && BRK_RULE.basic0 && typeof PT_SKB !== 'undefined' && PT_SKB.includes(id) ? { sm: 'skb' } : ptSmallOf(cls, d, lane); const xf = C && C.smallFx && C.smallFx[id]; /* 10월 17일 보완 2: 효과가 붙은 작은 노드(마검사 화력 C1 양손의 마검) */
         add(id, Object.assign(base, { kind: 'small', n: xf ? pnTxt(xf).n : ptSmallTxt(sm), d: ptSmallTxt(sm) + '.' + (xf ? ' ' + pnTxt(xf).d : '') }, sm, xf ? { fx: xf } : {})); }
     }
     if (typeof PT_BASIC !== 'undefined' && PT_BASIC[d]) PT_POS.map(pos => N[d + pos]).filter(x => x && x.kind === 'small' && x.ring === 1 && !x.fx).slice(0, PT_BASIC[d].length).forEach((x, i) => { const k = PT_BASIC[d][i], T = pnTxt(k); delete x.stat; Object.assign(x, { fx: k, n: T.n, d: T.d, basic: 1 }); }); // 0.8.0 M4 평타 축
@@ -57,6 +58,8 @@ function ptBuild(cls) {
    스킬 행 [id, 갈래, 고리, 반지름, 칸, 이웃, 비용, { requires }]: requires가 있으면 그 노드가 모두 열려야 연다(경계 입구 = 양쪽 갈래의 1고리 개시 노드) */
 const AT_SEC = { A: 0, AB: 60, B: 120, BC: 180, C: 240, CA: 300 }, AT_SEC_BOUND = ['AB', 'BC', 'CA'];
 const AT_TIER_RING = { 하급: 1, 중급: 2, 상급: 3, 궁극: 3 };
+/* 변형 자리 노드 id: 마검사는 sv_ + 'sb_' 뒤(세이브 그대로), 다른 직업은 sv_ + 스킬 id 전체(M5-1: 파수꾼 w_dstance · s_astance가 겹치지 않게) */
+const atSlotId = sid => /^sb_/.test(sid) ? 'sv_' + sid.slice(3) : 'sv_' + sid;
 function atBuild(cls) {
   if (ATREE[cls]) return ATREE[cls];
   const D = ATREE_DEF[cls], N = {}, V = {}, T2 = TREE2[cls] || { branches: [], starters: [] };
@@ -65,14 +68,14 @@ function atBuild(cls) {
   add('S', { kind: 'start', ring: 1, pos: { r: 0, lane: 'C' }, cost: 0, n: '시작 스킬', d: T2.starters.map(id => SK2[id] ? SK2[id].n : id).join(' · ') });
   const secOf = {}; if (D && D.sec) for (const k in D.sec) secOf[D.sec[k]] = k;
   if (D) {
-    for (const [id, br, ring, r, lane, , ys, ex] of D.skills) add(id, Object.assign({ kind: 'skill', br, ring, pos: { r, lane }, ys, n: SK2[id].n }, secOf[br] ? { sec: secOf[br] } : {}, ex && ex.requires ? { requires: ex.requires.slice() } : {}, ex && ex.excl ? { excl: ex.excl } : {}, ex && ex.reqTags ? { reqTags: Object.assign({}, ex.reqTags), ang: ex.ang } : {}, ex && ex.finOf ? { finOf: ex.finOf } : {}));
+    for (const [id, br, ring, r, lane, , ys, ex] of D.skills) add(id, Object.assign({ kind: 'skill', br, ring, pos: { r, lane }, ys, n: SK2[id].n }, secOf[br] ? { sec: secOf[br] } : {}, ex && ex.requires ? { requires: ex.requires.slice() } : {}, ex && ex.excl ? { excl: ex.excl } : {}, ex && ex.reqTags ? { reqTags: Object.assign({}, ex.reqTags), ang: ex.ang } : {}, ex && ex.finOf ? { finOf: ex.finOf } : {}, ex && ex.path ? { path: ex.path } : {})); /* M5-0c: 갈래 칸의 길(a · b) */
     for (const [id, br, ring, r, lane, on, n, d, mod, src] of D.ups || []) add(id, Object.assign({ kind: 'upgrade', br, ring, pos: { r, lane }, on, n, d, mod, src }, secOf[br] ? { sec: secOf[br] } : {}));
     for (const [id, , , , , ln] of D.skills) for (const x of ln) link(id, x);
     for (const u of D.ups || []) link(u[0], u[5]);
     /* M5-0 보정 5 P2 변형 강화: 스킬마다 변형 자리 노드(sv_*, 포인트 1)와 변형 셋(V). 고른 변형은 run.atree.vsel[자리] */
-    if (D.vars && D.vars.sb_mutants) for (const [vid, n, d, mod, tags, ex] of D.vars.sb_mutants) V[vid] = Object.assign({ id: vid, slot: 'sv_' + ex.on.slice(3), n, d, mod, tags: tags || [] }, ex); // P4 (d) 변종: 자리의 변형 목록에는 없고 제시에만 섞인다
-    if (D.vars) for (const sid in D.vars) { const sk = N[sid]; if (!sk) continue; const slot = 'sv_' + sid.slice(3);
-      add(slot, Object.assign({ kind: 'upgrade', slot: 1, br: sk.br, ring: sk.ring, pos: { r: sk.pos.r, lane: sk.pos.lane }, on: sid, n: SK2[sid].n + ' 변형', d: '변형 가운데 하나를 고릅니다. 판마다 둘이 제시되고, 야영지에서 바꿀 수 있습니다(포인트는 그대로).', mod: {}, vars: D.vars[sid].map(v => v[0]) }, sk.sec ? { sec: sk.sec } : {})); link(slot, sid);
+    if (D.vars && D.vars.sb_mutants) for (const [vid, n, d, mod, tags, ex] of D.vars.sb_mutants) V[vid] = Object.assign({ id: vid, slot: atSlotId(ex.on), n, d, mod, tags: tags || [] }, ex); // P4 (d) 변종: 자리의 변형 목록에는 없고 제시에만 섞인다
+    if (D.vars) for (const sid in D.vars) { const sk = N[sid]; if (!sk) continue; const slot = atSlotId(sid);
+      add(slot, Object.assign({ kind: 'upgrade', slot: 1, br: sk.br, ring: sk.ring, pos: { r: sk.pos.r, lane: sk.pos.lane }, on: sid, n: SK2[sid].n + ' 변형', d: '변형 둘 가운데 하나를 고릅니다. 야영지에서 바꿀 수 있습니다(포인트는 그대로).', mod: {}, vars: D.vars[sid].map(v => v[0]) }, sk.sec ? { sec: sk.sec } : {})); link(slot, sid);
       for (const [vid, n, d, mod, tags, ex] of D.vars[sid]) V[vid] = Object.assign({ id: vid, on: sid, slot, n, d, mod, tags: tags || [] }, ex || {}); }
   }
   for (const id in N) N[id].links.sort();
@@ -88,7 +91,7 @@ const clearsEff = run => (run.clears || 0) + (run.markCh ? run.markCh - 1 : 0); 
 const ringOpen = (run, ring) => clearsEff(run) >= (PT.ring[ring] || 0) || (run.ringCamp || 1) >= ring;
 const RING_WHY = { 2: '2고리는 1챕터 야영지에서 열립니다', 3: '3고리는 2챕터 야영지에서 열립니다' };
 function ringCampOpen(run) { if (!run || !run.ptree) return 0; const want = Math.min(3, (run.ch || 1) + 1); const was = [2, 3].filter(k => ringOpen(run, k)).length; run.ringCamp = Math.max(run.ringCamp || 1, want); const now = [2, 3].filter(k => ringOpen(run, k)).length; if (now > was) { run.ringNew = 1; if (typeof toast === 'function') toast('새 고리가 열렸다: ' + (now + 1) + '고리'); return now + 1; } return 0; }
-function ptInit(run) { if (!run.ptree) run.ptree = { own: [], free: [], ks: [], pts: ptTotal(run), log: [], ksv: 2 }; if (!run.atree) run.atree = { own: [], pts: atTotal(run), log: [], atv: 4 }; if (!run.ksGot) run.ksGot = {}; if (run.ksPending == null) run.ksPending = 0; return run; }
+function ptInit(run) { if (!run.ptree) run.ptree = { own: [], free: [], ks: [], pts: ptTotal(run), log: [], ksv: 3 }; if (!run.atree) run.atree = { own: [], pts: atTotal(run), log: [], atv: 10 }; if (!run.ksGot) run.ksGot = {}; if (run.ksPending == null) run.ksPending = 0; return run; }
 const ptOpenIds = run => ['S'].concat(run.ptree.own, run.ptree.free, run.ptree.ks);
 const atOpenIds = run => ['S'].concat(run.atree.own);
 const ptSpent = run => run.ptree.own.reduce((a, id) => a + ((ptBuild(run.build).nodes[id] || {}).cost || 0), 0);
@@ -111,16 +114,17 @@ const ptWhy = (run, id) => treeWhyBuy(run, ptBuild(run.build), ptOpenIds(run), r
 const atWhy = (run, id) => treeWhyBuy(run, atBuild(run.build), atOpenIds(run), run.atree.pts, id);
 function ptBuy(run, id) { const why = ptWhy(run, id); if (why) return why; const n = ptBuild(run.build).nodes[id]; run.ptree.own.push(id); run.ptree.pts -= n.cost; run.ptree.log.push({ id, lv: run.lv || 1, ch: run.ch || 1, room: run.room, t: Date.now() }); ptSync(run); return null; }
 /* M5-0 보정 5 P4 판마다 다른 제시(만든 사람 결정 D17): 판 시작 때 run.seed로 정한다. 갈래 스킬은 고정.
-   변형은 자리마다 셋 중 둘, 결합 칸은 셋 중 둘, 경계 승부수는 부채꼴마다 후보 둘 중 하나, 판마다 10%로 변종 하나가 제시에 섞인다. 저장(run.offer) */
+   변형은 자리마다 셋 중 둘, 결합 칸은 셋 중 둘, 경계 승부수는 부채꼴마다 후보 둘 중 하나, 판마다 10%로 변종 하나가 제시에 섞인다. 저장(run.offer)
+   M5-0c(10월 20일 만든 사람): 변형은 스킬마다 둘이고 둘 다 제시(무작위 없음), 승부수 후보 제도 폐지(대사 승부수 셋이 늘 나온다). 결합 칸 셋 중 둘 · 10% 변종(변형 셋째로 더함)은 그대로 */
 const AT_OFFER = { vars: 2, combos: 2, mut: 0.1 };
 function atRng(seed) { let a = (seed >>> 0) || 1; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
 function atOfferMake(build, seed) {
   const D = ATREE_DEF[build]; if (!D || !D.vars) return null; const A = atBuild(build), r = atRng((seed | 0) * 2654435761 + build.length * 97 + 7), pick = (L, k) => { const a = L.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a.slice(0, k); };
   const o = { v: 1, seed, vars: {}, combos: null, fins: {}, mut: null };
-  for (const id of Object.keys(A.nodes).sort()) { const n = A.nodes[id]; if (n.slot) o.vars[id] = pick(n.vars, AT_OFFER.vars); }
+  for (const id of Object.keys(A.nodes).sort()) { const n = A.nodes[id]; if (n.slot) o.vars[id] = n.vars.length > AT_OFFER.vars ? pick(n.vars, AT_OFFER.vars) : n.vars.slice(); }
   const cb = Object.keys(A.nodes).filter(id => A.nodes[id].reqTags).sort(); if (cb.length) o.combos = pick(cb, AT_OFFER.combos).sort();
   const fg = {}; for (const id of Object.keys(A.nodes).sort()) { const f = A.nodes[id].finOf; if (f) (fg[f] = fg[f] || []).push(id); } for (const f in fg) o.fins[f] = pick(fg[f], 1)[0];
-  const muts = Object.values(A.vars).filter(v => v.mut && o.vars[v.slot]); if (muts.length && r() < AT_OFFER.mut) { const m = pick(muts.map(v => v.id), 1)[0], s = A.vars[m].slot; o.vars[s] = [o.vars[s][0], m]; o.mut = m; }
+  const muts = Object.values(A.vars).filter(v => v.mut && o.vars[v.slot]); if (muts.length && r() < AT_OFFER.mut) { const m = pick(muts.map(v => v.id), 1)[0], s = A.vars[m].slot; o.vars[s] = o.vars[s].length > 2 ? [o.vars[s][0], m] : o.vars[s].concat([m]); o.mut = m; }
   return o; }
 function atOfferInit(run) { if (!run || run.offer || !ATREE_DEF[run.build] || !ATREE_DEF[run.build].vars) return run && run.offer; run.offer = atOfferMake(run.build, run.seed || 1); return run.offer; }
 /* 이번 판에 없는 칸: 제시되지 않은 결합 칸 · 승부수 후보, 그 칸의 변형 자리 */
@@ -178,7 +182,7 @@ function ptStats(run) { const T = ptBuild(run.build), o = { str: 0, dex: 0, int:
 /* 출처별 능력치 (화면): 시작 · 작은 노드 · 보너스 노드 */
 function ptStatSrc(run) { const T = ptBuild(run.build), src = { start: {}, own: {}, free: {} }; const put = (w, n) => { if (n && n.stat) for (const k in n.stat) src[w][k] = (src[w][k] || 0) + n.stat[k]; }; put('start', T.nodes.S); for (const id of run.ptree.own) put('own', T.nodes[id]); for (const id of run.ptree.free) put('free', T.nodes[id]); return src; }
 function ptFxKeys(run) { const T = ptBuild(run.build); return ['S'].concat(run.ptree.own, run.ptree.free, run.ptree.ks).map(id => T.nodes[id]).filter(n => n && n.fx).map(n => n.fx); }
-function ptSmall(run) { const T = ptBuild(run.build), o = { brk: 0, st: 0 }; for (const id of run.ptree.own.concat(run.ptree.free)) { const n = T.nodes[id]; if (n && n.sm) o[n.sm]++; } return o; }
+function ptSmall(run) { const T = ptBuild(run.build), o = { brk: 0, st: 0, skb: 0 }; for (const id of run.ptree.own.concat(run.ptree.free)) { const n = T.nodes[id]; if (n && n.sm) o[n.sm]++; } return o; }
 /* 트리 → 캐릭터: 능력치 · 노드 효과(p.pn · p.psm) · 생명력 비율 유지 */
 function ptSync(run) { if (!run.ptree) return; run.stats = ptStats(run); const p = run.p; if (!p) return; p.pn = ptFxKeys(run); p.psm = ptSmall(run); p.awk = (run.awk || []).slice(); applyStats(p, run.stats); }
 function atSync(run) { if (!run.atree || !run.p) return; run.p.skills = v2Equip(run); const T = atBuild(run.build), eq = run.p.skills; run.p.aup = run.atree.own.filter(id => T.nodes[id] && T.nodes[id].kind === 'upgrade' && eq.includes(T.nodes[id].on)).map(id => T.nodes[id].slot ? (run.atree.vsel || {})[id] : id).filter(Boolean).sort(); /* M5-0 보정 5: 변형 자리는 고른 변형으로(안 고른 자리는 일하지 않음) */ run.p.sbLead = atLead(run); }
@@ -232,6 +236,7 @@ function skCondMet(b, s, c, tgt) {
   if ((c.when || '').includes('&')) return c.when.split('&').every(w => skCondMet(b, s, Object.assign({}, c, { when: w }), tgt)); // 0.8.0 M5-0: 두 조건 모두(경계 강화 엉긴 상처)
   const mw = /^ward>=(\d+)$/.exec(c.when || ''); if (mw) return (p.ward || 0) >= +mw[1];
   const mk = /^ki>=(\d+)$/.exec(c.when || ''); if (mk) return st(p, 'empower') >= +mk[1];
+  if (c.when === 'wst') return !!(p.wdSt && (p.wdSt.def || p.wdSt.atk)); // M5-1 파수꾼: 태세가 켜져 있으면
   if (c.when === 'stance') return !!(p.stance || (b.mkStHeld != null && b.mkStHeld === b.turnIdx)); // 직전 적 차례를 자세로 맞았다(내 차례 첫 행동에서 자세가 풀려도 그 차례 동안 참)
   const m = /^kw:(\w+)>=(\d+)$/.exec(c.when || ''); if (m) { const ok = e => e && e.alive && st(e, m[1]) >= +m[2]; return tgt ? ok(tgt) : alive(b).some(ok); }
   /* 0.8.0 5단계 사냥꾼 (원거리 초안 2-2 · 8절 보완 1 · 2, 10월 18일): link = 이 스킬이 연계(직전 갈래 lastBr과 다름, 시작 스킬은 lb). 외길 사냥꾼이면 같은 갈래를 바로 이어 씀으로 바뀐다.
@@ -241,12 +246,19 @@ function skCondMet(b, s, c, tgt) {
   return false;
 }
 function skCostAt(b, s, tgt) {
-  const c0 = skCost(s); if (!b) return { c: c0, by: null }; let best = { c: c0, by: null };
+  const c0 = skCost(s) + (b && b.p && s.kind === 'spell' ? uqV(b.p, 'u_spellYs', 0, (a, v) => a + v) : 0); if (!b) return { c: c0, by: null }; let best = { c: c0, by: null }; /* M6-1 고유 sb_r3 대가: 주문 스킬 유산 +1 */
+  { const z = uqA(b.p, 'u_ysOff', s); if (z) return { c: Math.max(0, c0 - z), by: null }; } /* M6-1 고유 mk_r3 호흡 유산 0 */
+  { const ws = s.fx && s.fx.find(e => e.k === 'wdStance'), S = b.p && b.p.wdSt; if (ws && S) { if (S[ws.s]) return { c: 0, by: 'wdOff' }; if (S[ws.s === 'def' ? 'atk' : 'def'] && (S.turncoat || uqF(b.p, 'u_stanceFree'))) return { c: 0, by: 'wdTurn' }; } } /* M6-1 고유 wd_r3 태세의 장갑: 바꾸기 유산 0 */ // M5-1 파수꾼 태세: 끄기는 유산 0, 돌아선 방패면 바꾸기도 0
+  if (b.p && b.p.g8u && b.p.build === 'elementalist' && s.fx && s.fx.some(e => e.k === 'elSwitch') && uqF(b.p, 'u_freeSwitch')) return { c: 0, by: null }; /* M6-1 고유 el_r1: 원소 전환에 유산이 들지 않는다 */
   for (const c of s.cond || []) { if (b.condUsed && b.condUsed[c.id || s.id] === (b.ysR || 0)) continue; if (skCondMet(b, s, c, tgt)) { const c1 = Math.max(1, c0 - (c.off || 1)); if (c1 < best.c) { best = { c: c1, by: c.id || s.id }; break; } } }
+  if (b.p && b.p.hnSt && b.p.hnSt.windDisc && hnBr(s) === '기동' && c0 > 1 && c0 - 1 < best.c) best = { c: c0 - 1, by: 'hnWind' };
+  if (b.p && !b.ysSkN && c0 > 1 && c0 - 1 < best.c && fxVal(b.p, 'ysFirst', 0, (a, v) => a + v) > 0) best = { c: c0 - 1, by: 'ysFirst' }; // M7-3 접사(계승): 전투의 첫 스킬은 유산 −1(바닥 1) // M5-4 바람 걸음: 피한 뒤 다음 기동 스킬 −1(바닥 1)
   /* 10월 17일 보완 1 · 4: 두 번 교대의 다음 스킬 −1(b.altDisc), 마검 과부하 교대 셋의 다음 유산 4 스킬 −3(b.ovDisc). 바닥 1, 가장 큰 할인 하나만 */
   if (b.p && b.p.sbSt && b.p.sbSt.tricolor && s.kind === 'cut' && (b.p.ward || 0) > 0 && !(b.condUsed && b.condUsed.tricolor === (b.ysR || 0)) && alive(b).some(e => stk(e, 'bleed') > 0 && stk(e, 'ignite') > 0)) { const c1 = Math.max(1, c0 - 1); if (c1 < best.c) best = { c: c1, by: 'tricolor' }; } // M5-0 보정 5 결합 칸 삼색검(내 차례에 한 번)
   if (b.ovDisc && c0 >= 4) { const c1 = Math.max(1, c0 - SB_OVER.off); if (c1 < best.c) best = { c: c1, by: 'ksOver' }; }
   if (b.altDisc && c0 >= (SB_ALT2.min || 1)) { const c1 = Math.max(1, c0 - SB_ALT2.off); if (c1 < best.c) best = { c: c1, by: 'altDbl' }; }
+  if (s.kind === 'cut' && !(b.condUsed && b.condUsed.uqCut === (b.ysR || 0)) && uqF(b.p, 'u_cutDisc')) { const c1 = Math.max(1, c0 - 1); if (c1 < best.c) best = { c: c1, by: 'uqCut' }; } /* M6-1 고유 sb_r3: 베기 스킬 유산 −1(내 차례에 한 번, 바닥 1, 가장 큰 할인 하나만) */
+  if (b.p && b.p.g8u && !(b.condUsed && b.condUsed.g8co === (b.ysR || 0))) { const co = uqV(b.p, 'u_costOnce', [], (a, v) => a.concat(v)); if (co.length && (s.tags || []).some(t => co.includes(t))) { const c1 = Math.max(1, c0 - 1); if (c1 < best.c) best = { c: c1, by: 'g8co' }; } } /* M6-1 접사 costOnce: [꼬리표] 스킬 유산 −1(내 차례에 한 번, 바닥 1, 가장 큰 할인 하나만) */
   return best;
 }
 /* ---- 큰 각인 (1-7) ---- */
@@ -266,7 +278,8 @@ function ksCands(run) {
     return { id: n.id, dir: n.dir, d: dist[n.id], path, rk: ksHash(n.id + ':' + ((run.seed || 0) + ch)) };
   });
 }
-/* 셋 고르기: 거리 → 이미 고른 후보와 다른 방향 → 시드 순서. 3칸 안이 모자라면 4, 5칸 …에서 같은 순서로 채운다 */
+/* 셋 고르기: 거리 → 이미 고른 후보와 다른 방향 → 시드 순서. 찍은 곳에서 PT.ksN칸 안, 보너스 노드 PT.ksFree칸까지만(0.8.0 M7-2: 전에는 4, 5칸 …에서도 채워 긴 공짜 길이 열렸다).
+   3칸 안에 없으면 받을 것(ksPending)은 남겨 두고 제시하지 않는다. 노드를 더 찍어 가까워지면 그때 고른다 */
 /* 10월 18일 0.8.0 5단계(원거리 초안 10절 결정 4, 모든 직업): 연 액티브 스킬(시작 스킬 · 찍은 스킬 노드 · 장착)에 유산 4 스킬이 하나도 없으면 결정의 칼(유산 4 스킬 +25%)은 후보에서 뺀다.
    비용은 강화 · 노드 비용을 넣은 skCost(skOf). 빠진 자리는 같은 규칙(거리 → 방향 → 시드)으로 다음 후보가 채운다 */
 function ksHasCost4(run) {
@@ -277,14 +290,15 @@ function ksHasCost4(run) {
 }
 function ksOfferMake(run) {
   const T = ptBuild(run.build), no4 = !ksHasCost4(run);
-  const C = ksCands(run).filter(x => !(no4 && T.nodes[x.id].fx === 'ks_crystal')).sort((a, b) => a.d - b.d || a.rk - b.rk), out = [];
+  const C = ksCands(run).filter(x => x.d <= PT.ksN && x.path.length <= PT.ksFree && !(no4 && T.nodes[x.id].fx === 'ks_crystal')).sort((a, b) => a.d - b.d || a.rk - b.rk), out = [];
   while (out.length < PT.ksOffer && C.length) { const d = C[0].d; const grp = C.filter(x => x.d === d); const dirs = out.map(x => x.dir); const pick = grp.find(x => !dirs.includes(x.dir)) || grp[0]; out.push(pick); C.splice(C.indexOf(pick), 1); }
   return out.map(x => x.id);
 }
 const ksInfo = (run, id) => ksCands(run).find(x => x.id === id) || null;
 /* 받는 때: 1 · 2챕터 정산을 확정한 뒤(b1 · b2), 3챕터 야영지에 들어설 때(c3). 같은 때는 한 번만 */
 function ksGrant(run, key) { ptInit(run); if (run.ksGot[key]) return false; run.ksGot[key] = Date.now(); run.ksPending = (run.ksPending || 0) + 1; (run.ksLog = run.ksLog || []).push({ grant: key, ch: run.ch || 1, room: run.room, t: Date.now() }); return true; }
-function ksEnsureOffer(run) { if (!(run.ksPending > 0)) { run.ksOffer = null; return []; } if (!run.ksOffer || !run.ksOffer.length || run.ksOffer.some(id => run.ptree.ks.includes(id))) run.ksOffer = ksOfferMake(run); if (!run.ksOffer.length) { run.ksPending = 0; run.ksOffer = null; return []; } return run.ksOffer; }
+function ksEnsureOffer(run) { if (!(run.ksPending > 0)) { run.ksOffer = null; return []; } if (!run.ksOffer || !run.ksOffer.length || run.ksOffer.some(id => run.ptree.ks.includes(id))) run.ksOffer = ksOfferMake(run); if (!run.ksOffer.length) { run.ksOffer = null; return []; } return run.ksOffer; }
+const ksCanPick = run => run.ksPending > 0 && ksEnsureOffer(run).length > 0; // 받을 것이 있고 3칸 안에 후보가 있다
 function ksTake(run, id) {
   if (!(run.ksPending > 0) || !(run.ksOffer || []).includes(id) || run.ptree.ks.includes(id)) return '고를 수 없는 큰 각인입니다';
   const c = ksInfo(run, id); if (!c) return '닿을 수 없는 자리입니다';
@@ -298,11 +312,22 @@ function runTags(run) { const c = {}; const add = L => { for (const t of L || []
   if (run.atree) { const A = atBuild(run.build); for (const id of run.atree.own) { const n = A.nodes[id]; if (n && n.kind === 'skill' && SK2[id]) add(SK2[id].tags); } for (const v of Object.values(run.atree.vsel || {})) { const V = A.vars && A.vars[v]; if (V) add(V.tags); } }
   if (run.ptree && typeof PT_TAGS !== 'undefined') { const T = ptBuild(run.build); for (const id of [].concat(run.ptree.own, run.ptree.free, run.ptree.ks)) { const n = T.nodes[id]; if (n && n.fx) add(PT_TAGS[n.fx]); } }
   return c; }
+/* M5-5(10월 21일 만든 사람): 원소술사 액티브 재설계. atv 10: 같은 규칙(빠진 칸 환급). 옛 원소술사 판의 옛 칸 · 강화(eu_*)는 트리에 없어 돌려받고, 시작 스킬(불씨 화살 · 서리 손길 → 마력탄 · 원소 전환)은 v2Equip이 새 시작 스킬로 바꿔 끼운다.
+   M5-4(10월 21일 만든 사람): 사냥꾼 액티브 재설계. atv 9: 같은 규칙(빠진 칸 환급). 옛 사냥꾼 판의 옛 칸 · 강화(hu_*)는 트리에 없어 돌려받는다.
+   M5-3(10월 20일 만든 사람): 암살자 액티브 재설계. atv 8: 같은 규칙(빠진 칸 환급). 옛 암살자 판의 옛 칸 · 강화(au_*)는 트리에 없어 돌려받는다.
+   M5-2(10월 20일 만든 사람): 수도승 액티브 재설계. atv 7: 같은 규칙(빠진 칸 환급). 옛 수도승 판의 사다리 칸 · 강화(mu_*)는 트리에 없어 돌려받는다.
+   M5-1(10월 20일 만든 사람): 파수꾼 액티브 재설계. atv 6: 같은 규칙(빠진 칸 · 빠진 변형 환급). 옛 파수꾼 판의 강화 노드(wu_*) · 사다리 칸은 트리에 없어 돌려받는다.
+   M5-0c(10월 20일 만든 사람): 마검사 액티브 재설계. atv 5: 트리에서 빠진 칸 · 빠진 변형을 찍어 둔 판은 그 포인트를 돌려준다(액티브 포인트로).
+   빠진 변형 = 고른 변형이 그 자리의 변형 목록에 없는 것(변종은 그 자리 것이면 남긴다). 제시(run.offer)는 새 규칙으로 다시 만들고, 남긴 변종은 제시에 더한다 */
 function atMigrateM5(run) {
-  if (!run || !run.atree || run.atree.atv >= 4) return 0; const why = run.atree.atv === 3 ? '빌드 규격 2판' : run.atree.atv === 2 ? '부채꼴 칸 정리' : '임시 트리 폐기'; run.atree.atv = 4; // M5-0 보정 5: atv 4(경계 둘째 칸 교체 · 1고리 갈림)
-  const A = atBuild(run.build); const own0 = run.atree.own || []; const keep0 = [];
-  for (const id0 of own0) { const id = !A.nodes[id0] && A.vars && A.vars[id0] ? A.vars[id0].slot : id0; const n = A.nodes[id]; if (!n || keep0.includes(id)) continue; if (n.excl && keep0.includes(n.excl)) continue; keep0.push(id); } // 1고리 갈림에서 둘 다 찍힌 옛 판은 먼저 찍은 쪽을 남긴다. 옛 강화(이제 변형)는 그 스킬의 변형 자리를 연 채 변형은 고르지 않음(야영지에서 고름)
+  if (!run || !run.atree || run.atree.atv >= 10) return 0; const why = run.atree.atv === 9 ? '원소술사 재설계' : run.atree.atv === 8 ? '사냥꾼 재설계' : run.atree.atv === 7 ? '암살자 재설계' : run.atree.atv === 6 ? '수도승 재설계' : run.atree.atv === 5 ? '파수꾼 재설계' : run.atree.atv === 4 ? '마검사 재설계' : run.atree.atv === 3 ? '빌드 규격 2판' : run.atree.atv === 2 ? '부채꼴 칸 정리' : '임시 트리 폐기'; run.atree.atv = 10; // M5-2 수도승: atv 7(다른 직업은 바뀐 칸이 없어 그대로). M5-0 보정 5: atv 4(경계 둘째 칸 교체 · 1고리 갈림), M5-0c: atv 5, M5-1 파수꾼: atv 6(다른 직업은 바뀐 칸이 없어 그대로)
+  const A = atBuild(run.build); const own0 = run.atree.own || []; const keep0 = []; const vs = run.atree.vsel || {};
+  const varOk = (slot, v) => !v || (A.vars && A.vars[v] && A.vars[v].slot === slot);
+  for (const id0 of own0) { const id = !A.nodes[id0] && A.vars && A.vars[id0] ? A.vars[id0].slot : id0; const n = A.nodes[id]; if (!n || keep0.includes(id)) continue; if (n.excl && keep0.includes(n.excl)) continue; if (n.slot && !varOk(id, vs[id])) continue; keep0.push(id); } // 1고리 갈림에서 둘 다 찍힌 옛 판은 먼저 찍은 쪽을 남긴다. 옛 강화(이제 변형)는 그 스킬의 변형 자리를 연 채 변형은 고르지 않음(야영지에서 고름)
   const reach = treeReach(A, ['S'].concat(keep0), ['S']); const keep = keep0.filter(id => reach.has(id) || A.nodes[id].reqTags || (A.nodes[id].slot && A.nodes[A.nodes[id].on].reqTags && keep0.includes(A.nodes[id].on)));
+  for (const s in vs) if (!keep.includes(s) || !varOk(s, vs[s])) delete vs[s];
+  const stale = run.offer && (Object.keys(run.offer.fins || {}).length || Object.entries(run.offer.vars || {}).some(([s, L]) => !A.nodes[s] || L.some(v => !A.vars[v]))); /* M5-1: 제시가 지금 트리와 어긋날 때만 새로(이미 새 트리인 판의 제시는 그대로) */
+  if (ATREE_DEF[run.build] && ATREE_DEF[run.build].vars && stale) { run.offer = atOfferMake(run.build, run.seed || 1); for (const s in vs) { const v = A.vars[vs[s]]; if (v && v.mut && run.offer.vars[s] && !run.offer.vars[s].includes(v.id)) { run.offer.vars[s] = run.offer.vars[s].concat([v.id]); run.offer.mut = v.id; } } }
   const slotOf = id => !A.nodes[id] && A.vars && A.vars[id] ? A.vars[id].slot : id; const gone = own0.filter(id => !keep.includes(slotOf(id))); if (!gone.length) { run.atree.own = keep; return 0; }
   run.atree.own = keep; run.atree.pts = (run.atree.pts || 0) + gone.length; (run.atree.log = run.atree.log || []).push({ refund: gone.length, why, gone: gone.slice(), t: Date.now() });
   const T2 = TREE2[run.build] || { starters: [] }; run.skills = (run.skills || []).filter(id => keep.includes(id) || T2.starters.includes(id)); return gone.length;
@@ -310,9 +335,22 @@ function atMigrateM5(run) {
 /* 0.8.0 M4(10월 19일): 큰 각인 배치가 바뀌었다(KS_V1 → PT_CLS). 옛 판에서 찍어 둔 자리의 각인이 바뀌었으면(넘치는 그릇 · 결정의 칼 · 망치의 길 · 먼저 움직임 · 철벽 등)
    그 각인과 그때 공짜로 연 길을 거두고 큰 각인 하나를 다시 고르게 한다(ksPending +1). run.ptree.ksv = 2면 끝난 판 */
 function ksMigrateM4(run) {
-  if (!run || !run.ptree || run.ptree.ksv === 2) return 0; run.ptree.ksv = 2;
+  if (!run || !run.ptree || run.ptree.ksv >= 2) return 0; run.ptree.ksv = 3; /* M4 전 판은 지금 배치와 견주므로 M5-4 옮기기(ksMigrateM54)는 건너뛴다 */
   if (typeof KS_V1 === 'undefined' || !KS_V1[run.build] || !(run.ptree.ks || []).length) return 0;
   const T = ptBuild(run.build), old = KS_V1[run.build]; let n = 0;
+  for (const id of run.ptree.ks.slice()) {
+    if (!old[id] || !T.nodes[id] || T.nodes[id].fx === old[id]) continue;
+    run.ptree.ks = run.ptree.ks.filter(x => x !== id); const L = (run.ksLog || []).filter(x => x.id === id).pop(); if (L && L.free) run.ptree.free = run.ptree.free.filter(x => !L.free.includes(x));
+    run.ksPending = (run.ksPending || 0) + 1; run.ksOffer = null; (run.ksRefund = run.ksRefund || []).push({ id, fx: old[id], t: Date.now() }); n++;
+  }
+  return n;
+}
+/* 0.8.0 M5-4(10월 21일): 사냥꾼 기민 K9 먼저 움직임(전투 시작 가속) → 흘림새. M4 배치(ksv 2)의 판에서 바뀐 자리의 각인을 찍어 두었으면 거두고 다시 고르게 한다. ksv 3이면 끝난 판 */
+const KS_V2 = { hunter: { agK9: 'ks_first' } };
+function ksMigrateM54(run) {
+  if (!run || !run.ptree || run.ptree.ksv !== 2) return 0; run.ptree.ksv = 3;
+  if (!KS_V2[run.build] || !(run.ptree.ks || []).length) return 0;
+  const T = ptBuild(run.build), old = KS_V2[run.build]; let n = 0;
   for (const id of run.ptree.ks.slice()) {
     if (!old[id] || !T.nodes[id] || T.nodes[id].fx === old[id]) continue;
     run.ptree.ks = run.ptree.ks.filter(x => x !== id); const L = (run.ksLog || []).filter(x => x.id === id).pop(); if (L && L.free) run.ptree.free = run.ptree.free.filter(x => !L.free.includes(x));
@@ -374,11 +412,12 @@ const IFX_NODE = {
   n_sb_under: { inP: (b, p, o) => p.ward > 0 && !o.dot ? 0.04 : 0 },
   ks_sb_sear: { ksSearSpell: 1 }, ks_sb_sin: { ksSinBlock: 1 }, ks_sb_ash: { ksAshBlast: 1 }, // 0.8.0 M5-0 마검사 경계 큰 각인(js/24 addS · 방어 · js/10 sbWardHit)
   ks_deep: { ysCap: 1, hitP: (b, p, e, o, c) => c && c.id === 'basic' ? -0.15 : 0 }, // 0.8.0 M4(D10): 대가 기본 공격 −15%
-  ks_sharp: { ysCap: -2, hitP: (b, p, e, o, c) => c && c.id === 'basic' ? 0.3 : 0, brk: (b, p, e, c) => c && c.id === 'basic' && e && e.intent && e.intent.k && e.intent.k !== 'attack' ? 10 : 0 }, // 날 선 손
+  ks_sharp: { ysCap: -2, hitP: (b, p, e, o, c) => c && c.id === 'basic' ? 0.3 : 0, brk: (b, p, e, c) => brkB(c) && e && e.intent && e.intent.k && e.intent.k !== 'attack' ? 10 : 0 }, // 날 선 손(M5-7: 규칙을 켜면 강공격일 때만)
   ks_tireless: { cost: (p, id) => id === 'heavy' ? -15 : 0, cap: { life: -1 } }, // 쉬지 않는 팔
   ks_brkbreath: { ysChan: ['무너뜨리기'] }, ks_slipbreath: { ysChan: ['흘리기', '먼저 치우기'] }, ks_blockbreath: { ysChan: ['막기'] }, // 방향별 유산 통로(ysChanResp)
   n_bs_dmg: { hitP: (b, p, e, o, c) => c && c.id === 'basic' ? 0.04 : 0 }, n_bs_dmg2: { hitP: (b, p, e, o, c) => c && c.id === 'basic' ? 0.04 : 0 },
-  n_bs_brk: { brk: (b, p, e, c) => c && c.id === 'basic' ? 2 : 0 },
+  n_bs_brk: { brk: (b, p, e, c) => brkB(c) ? (BRK_RULE.basic0 ? BRK_RULE.bsHeavy : 2) : 0 }, // M5-7: 규칙을 켜면 강공격 붕괴 +bsHeavy
+  n_ct_skbrk: { brkMul: (b, p, e, c) => c && c.skill ? 1 + BRK_RULE.skbM : 1 }, // M5-7 제어 중간 노드: 스킬 붕괴
   n_bs_st: { onHit: (b, p, e, o, c) => { if (!c || c.id !== 'basic') return; const s0 = p.st; p.st = Math.min(p.stMax, p.st + 3); return p.st > s0 ? 1 : 0; } },
   ks_double: { ysRespMax: 1, ysStart: -2 },
   ks_bare: { ysRespPer: 1, hitP: (b, p, e, o, c) => c && c.id === 'basic' ? -0.2 : 0 },
@@ -436,7 +475,7 @@ const IFX_NODE = {
   ks_mk_empty: { hitP: (b, p, e, o, c) => c && c.skill && (skOf(p, c.id) || { fx: [] }).fx.some(f => f.k === 'kiBurst') ? 0.3 : 0, ctrKiOnce: 1 }, // 비운 그릇 (10월 17일 검토 2-2: 대가는 되받기 기 한 번)
   ks_mk_vow: { inP: (b, p, o) => p.stance && !o.dot ? 0.12 : 0, noFastAtk: 1 }, // 부동의 맹세
   /* ---- 0.8.0 5단계 사냥꾼 (docs/제안/0.8.0-5단계-원거리3직업-트리초안-2026-10-17.md 2-5, 10월 18일) ---- */
-  n_hn_pull: { hitP: (b, p, e, o, c) => c && c.id === 'basic' && b.extraTurn ? 0.15 : 0, onHit: (b, p, e, o, c, d) => { if (!c || c.id !== 'basic' || !b.extraTurn || !(d > 0) || b.hnPullA === b.actN) return; b.hnPullA = b.actN; fxStam(p, 5); return 1; } }, // 이어 당기는 활: 가속의 두 번째 차례 기본 공격(덧화살 포함) +15%, 맞히면 스태미나 +5
+  n_hn_pull: { hitP: (b, p, e, o, c) => c && c.id === 'basic' && hnLinkUsed(b) > 0 ? 0.15 : 0, onHit: (b, p, e, o, c, d) => { if (!c || c.id !== 'basic' || !(hnLinkUsed(b) > 0) || !(d > 0) || b.hnPullA === b.actN) return; b.hnPullA = b.actN; fxStam(p, 5); return 1; } }, // 이어 당기는 활: 가속의 두 번째 차례 기본 공격(덧화살 포함) +15%, 맞히면 스태미나 +5
   n_hn_breath: { hitP: (b, p, e, o, c) => c && c.skill && hnFocusPre(b, p, e, o) >= HUNT.focusMax ? 0.08 : 0 }, // 사냥감의 숨: 맞히기 전 추적 3겹 이상
   n_hn_tough: { inP: (b, p, o) => !o.dot && p.hp <= p.hpMax * 0.3 ? 0.08 : 0 }, // 질긴 사냥꾼
   n_hn_unavoid: { inP: (b, p, o) => o.aoe || o.spell || o.dot ? 0.08 : 0 }, // 피할 수 없는 것
@@ -496,4 +535,4 @@ const IFX_NODE = {
 /* 사냥꾼: 이 타격 전의 추적 겹 (한 적 공격은 hurtEnemy가 겹을 먼저 올리므로 그 전 값, 광역은 올리지 않는다) */
 function hnFocusPre(b, p, e, o) { if (!p.focus || p.focus.id !== e.id) return 0; if (o && o.aoe) return p.focus.n; if (b.curSkill && b.focusKey === b.curSkill + ':' + e.id) return b.focusPre || 0; return Math.max(0, p.focus.n - 1); }
 const PSM_FX = new Map();
-function ptSmallFx(sm) { const key = (sm.brk || 0) + ':' + (sm.st || 0); if (!PSM_FX.has(key)) PSM_FX.set(key, Object.assign(sm.st ? { st: { st: PT.smallSt * sm.st } } : {}, sm.brk ? { brkMul: (() => { const m = Math.pow(1 + PT.smallBrk, sm.brk); return () => m; })() } : {})); return PSM_FX.get(key); }
+function ptSmallFx(sm) { const key = (sm.brk || 0) + ':' + (sm.st || 0) + ':' + (sm.skb || 0); if (!PSM_FX.has(key)) PSM_FX.set(key, Object.assign(sm.st ? { st: { st: PT.smallSt * sm.st } } : {}, (sm.brk || sm.skb) ? { brkMul: (() => { const m = Math.pow(1 + PT.smallBrk, sm.brk || 0), k = 1 + BRK_RULE.skbS * (sm.skb || 0); return (b, p, e, c) => m * (c && c.skill ? k : 1); })() } : {})); /* M5-7: skb 스킬 붕괴 */ return PSM_FX.get(key); }

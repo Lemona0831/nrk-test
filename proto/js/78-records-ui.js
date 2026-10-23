@@ -1,6 +1,6 @@
 'use strict';
 /* ===== 기록 · 랭킹 · 도감 · 계정 목표 · 표식 도전 화면 (0.6a.2-113, 10월 10일 전면 개편) =====
-   저장 형식은 그대로다: G.data.runs · rank62 · graves · codex · goals · markBest · 랭킹판(G.board)을 읽기만 한다.
+   저장 형식은 그대로다: G.data.runs · rank80(M8 시즌 키, 0.7.0은 rank62) · graves · codex · goals · markBest · 랭킹판(G.board)을 읽기만 한다.
    화면 상태(필터 · 탭 · 열린 판)는 G.rc에만 두고 저장하지 않는다. 단추는 data-a="rc" data-k="종류:값" 하나로 받는다.
    랭킹의 일반 · 가혹과 직업 칩, 목표의 일반 · 가혹, 표식 도전의 고르기는 예전 data-a(rmode · rtab · gmode · mk*)를 그대로 쓴다.
    숨겨진 직업은 랭킹 · 도감 · 목표에서 rankClassView · unlOpen으로 가린다. 내 판 기록은 내 직업 이름 그대로 쓴다. */
@@ -12,6 +12,7 @@ const rcClock = t => t ? new Date(t).toLocaleTimeString('ko-KR', { hour: '2-digi
 const rcMs = ms => ms > 0 ? fmtMs(ms) : '기록 없음';
 function rcFloor(ch, f) {
   if (!f) return '';
+  if (ch === 3 && !OLD3) return f > FLOORS ? '끝' : f === FLOOR_CAMP || f === FLOOR_BOSS ? floorBandOf(3, f).n : floorBandOf(3, f).n + ' ' + f + '층'; // A3 「성벽 아래」 층 띠
   if (f === FLOOR_BOSS) return ch >= 3 ? '재의 왕좌' : '보스';
   if (f === FLOOR_CAMP) return ch >= 3 && typeof floorBand3 === 'function' ? '오아시스 야영지' : '야영지';
   if (f > FLOORS) return '끝';
@@ -20,9 +21,9 @@ function rcFloor(ch, f) {
 }
 function rcProg(x) { return (x.clears || 0) >= (x.ch || 1) ? x.clears + '챕터 돌파' : (x.ch || 1) + '챕터 ' + rcFloor(x.ch || 1, x.floor || 1); }
 const rcSteps = (a, b) => a.filter(x => x).length + '/' + b;
-/* 내 판 기록: G.data.runs를 바탕으로, 랭킹 줄(rank62)에만 남은 판도 간단한 줄로 함께 센다 */
+/* 내 판 기록: G.data.runs를 바탕으로, 랭킹 줄(rank80)에만 남은 판도 간단한 줄로 함께 센다 */
 function rcRuns() {
-  const d = G.data, R = d.rank62 || {}, seen = {}, out = []; const live = {};
+  const d = G.data, R = d.rank80 || {}, seen = {}, out = []; const live = {};
   if (d.cur) live[d.cur.id] = 1; for (const k of d.kept || []) live[k.id] = 1;
   const stOf = (res, e, lv, clears) => res === 'lose' ? 'dead' : res === 'abandon' ? 'abandon' : res === 'flee' ? 'left' : lv ? 'alive' : (e && e.st === 'dead') ? 'dead' : (e && e.st === 'abandon') ? 'abandon' : clears > 0 ? 'clear' : 'left';
   for (const r of d.runs || []) {
@@ -99,7 +100,7 @@ function rcRunDetail(id) {
   if (r.combatStats) h += `<section class="rcsec"><h4>전투 수치</h4><dl class="rcfacts">${GSTAT.filter(([k])=>Number.isFinite(r.combatStats[k]) && !(isV2({build:x.build}) && k==='mp')).map(([k,lab,fmt])=>row(esc(lab),esc(String(fmt(r.combatStats[k]))))).join('')}</dl><p class="mini">마지막 저장 당시의 수치입니다. 공격 피해는 장비 기준이며 힘 배율·일시 효과·적의 피해 감소 적용 전입니다.</p></section>`;
   /* 장비 · 스킬 · 각인 */
   const eq = Array.isArray(r.eqDetails) ? r.eqDetails : (r.eq7 || []).map((s, i) => s ? {sl:EQ_SLOTS[i],tpl:s.split(':')[0],g:s.split(':')[1] || 'n'} : null).filter(Boolean);
-  h += `<section class="rcsec"><h4>최종 장비</h4>${eq.length ? `<ul class="rcplain">${eq.map(e=>`<li><span class="mini">${esc(EQ_SLOT_N[e.sl] || e.sl || '')}</span> <span class="gr-${['n','m','r','h','l'].includes(e.g)?e.g:'n'}">${ITEMS[e.tpl] ? inm(e.tpl,e.g) : esc(e.tpl)}</span>${e.base ? `<p class="mini">${esc(e.base)}</p>` : ''}${e.effect ? `<p>${esc(e.effect)}</p>` : ''}${e.cost ? `<p class="mini">대가: ${esc(e.cost)}</p>` : ''}</li>`).join('')}</ul>` : '<p class="mini">기록 없음</p>'}</section>`;
+  h += `<section class="rcsec"><h4>최종 장비</h4>${eq.length ? `<ul class="rcplain">${eq.map(e=>`<li><span class="mini">${esc(EQ_SLOT_N[e.sl] || e.sl || '')}</span> <span class="gr-${['n','m','r','h','l'].includes(e.g)?e.g:'n'}">${ITEMS[e.tpl] ? inm(e.tpl,e.g) : esc(e.name || e.tpl)}</span>${e.base ? `<p class="mini">${esc(e.base)}</p>` : ''}${e.effect ? `<p>${esc(e.effect)}</p>` : ''}${e.cost ? `<p class="mini">대가: ${esc(e.cost)}</p>` : ''}</li>`).join('')}</ul>` : '<p class="mini">기록 없음</p>'}</section>`;
   const SM = skillMap(x.build), starters = (TREE2[x.build] && TREE2[x.build].starters) || [], sk = (r.skills || []).filter(s => SM[s]);
   h += `<section class="rcsec"><h4>스킬</h4>${starters.length || sk.length ? `<ul class="rcplain">${[...new Set(starters.concat(sk))].filter(id=>SM[id]).map(id=>`<li>${SM[id].v2 ? `<details><summary>${esc(SM[id].n)}</summary><p class="mini">${esc(skHead(SM[id].s))}</p><p>${esc(skBody(SM[id].s))}</p></details>` : esc(SM[id].n)}</li>`).join('')}</ul><p class="mini">설명은 현재 규칙을 기준으로 표시합니다.</p>` : '<p class="mini">기록 없음</p>'}</section>`;
   const aw = (r.awk || []).filter(a => AWK_MAP[a]);
@@ -144,8 +145,8 @@ function vRecords() {
 /* ===== 랭킹 ===== */
 function rankDisplayRows() {
   const out=[];
-  if(G.db && G.board){for(const T of G.board)for(const e of Object.values(T.rank62 || {}))out.push(Object.assign({},e,{uid:T.uid,nick:T.name || '',me:T.uid===G.uid}));}
-  else for(const e of Object.values(G.data.rank62 || {}))out.push(Object.assign({},e,{uid:G.uid || 'local',nick:G.data.name || '',me:true}));
+  if(G.db && G.board){for(const T of G.board)for(const e of Object.values(T.rank80 || {}))out.push(Object.assign({},e,{uid:T.uid,nick:T.name || '',me:T.uid===G.uid}));}
+  else for(const e of Object.values(G.data.rank80 || {}))out.push(Object.assign({},e,{uid:G.uid || 'local',nick:G.data.name || '',me:true}));
   const tab=G.rankTab || 'all',mode=G.rankMode==='hard' ? 'hard' : 'normal';
   return out.filter(e=>BUILDS[e.build]&&(tab==='all'||e.build===tab)&&(e.mode==='hard'?'hard':'normal')===mode&&(G.rankIncludeDead!==false||e.st!=='dead')).sort(rankCmp);
 }

@@ -55,7 +55,7 @@ function vATreeList(run) {
 // 사냥꾼의 연계는 장착한 갈래 스킬끼리만 만듭니다.
 function hunterLoadoutHint(run) {
   if (run.build !== 'hunter') return '';
-  return `<p class="mini loadout-hint" data-info="elink" tabindex="0">연계: 다른 갈래 스킬을 이어 쓰면 피해 +${Math.round(HUNT.link * 100)}%.</p>`;
+  return `<p class="mini loadout-hint" data-info="elink" tabindex="0">연계: 다른 갈래 스킬을 이어 쓰면 그 스킬이 빠른 행동(내 차례에 한 번).</p>`;
 }
 function vTreeView() {
   const run = G.run; if (!run.ptree) treeSync(run); const v = G.tview === 'a' ? 'a' : 'p';
@@ -71,24 +71,24 @@ function ksCard(run, id, btn) {
 }
 function vKsPick(run) {
   const offer = ksEnsureOffer(run), list = trdListOn() || !offer.length; // 10월 17일 3단계: 후보 셋을 트리 그림 위에도 보인다(카드 · 그림 어느 쪽에서도 고른다)
-  return `<div class="row trd-bar"><p class="mini">찍은 곳 가까이의 큰 각인 셋 가운데 하나를 고릅니다. 고르면 거기까지의 길이 포인트 없이 열립니다. 남은 고를 것 ${run.ksPending}번.</p>${trdListBtn()}</div>${list ? '' : trdView(run, 'k', { offer })}<div class="awklist">${offer.map((id, i) => ksCard(run, id, `<div class="row"><button class="gold" data-a="kspick" data-k="${id}">이것을 고른다</button>${list ? '' : `<button class="sm" data-a="tsel" data-k="${id}" data-e="k">그림에서 보기 · 후보 ${i + 1}</button>`}</div>`)).join('') || '<p class="mini">닿는 큰 각인 자리가 없습니다.</p>'}</div>`;
+  return `<div class="row trd-bar"><p class="mini">찍은 곳 가까이의 큰 각인 셋 가운데 하나를 고릅니다. 고르면 거기까지의 길이 포인트 없이 열립니다. 남은 고를 것 ${run.ksPending}번.${offer.length ? '' : ' 지금은 찍은 곳에서 ' + PT.ksN + '칸 안에 큰 각인이 없습니다. 노드를 더 찍어 가까워지면 고를 수 있습니다.'}</p>${trdListBtn()}</div>${list ? '' : trdView(run, 'k', { offer })}<div class="awklist">${offer.map((id, i) => ksCard(run, id, `<div class="row"><button class="gold" data-a="kspick" data-k="${id}">이것을 고른다</button>${list ? '' : `<button class="sm" data-a="tsel" data-k="${id}" data-e="k">그림에서 보기 · 후보 ${i + 1}</button>`}</div>`)).join('') || '<p class="mini">닿는 큰 각인 자리가 없습니다.</p>'}</div>`;
 }
 /* ---- 배분 흐름 (캐릭터 만들기 · 옛 세이브 옮기기, 9-3절 + 10-4 단계 잠금) ----
    단계: i 안내(옮기기만) → p 패시브 → k 큰 각인(받을 것이 있으면) → a 액티브 · 장착 → 확정. 다음 단계로 넘어가면 앞 단계는 되돌릴 수 없다. 닫기 버튼이 없다 */
 function allocBegin(run, mode) { run.alloc = { mode, step: mode === 'mig' ? 'i' : 'p' }; G.sheet = null; openSheet('alloc', { first: mode === 'create' ? 1 : 0 }); }
 function migBegin(cur) {
-  treeMigrate08(cur); G.run = cur; consFix(cur); ptInit(cur); atMigrateM5(cur); { const kn = ksMigrateM4(cur); if (kn) toast('큰 각인 자리가 바뀌어 ' + kn + '개를 돌려받았습니다. 다시 고를 수 있습니다'); } ptSync(cur); applyGear(cur); G.b = null; G.sel = null; G.scr = cur.phase === 'clearsv' ? 'survey' : cur.phase || 'run';
+  treeMigrate08(cur); G.run = cur; consFix(cur); ptInit(cur); atMigrateM5(cur); { const kn = ksMigrateM4(cur) + ksMigrateM54(cur); if (kn) toast('큰 각인 자리가 바뀌어 ' + kn + '개를 돌려받았습니다. 다시 고를 수 있습니다'); } ptSync(cur); applyGear(cur); G.b = null; G.sel = null; G.scr = cur.phase === 'clearsv' ? 'survey' : cur.phase || 'run';
   allocBegin(cur, 'mig'); render();
 }
 function allocNext(run) {
   const A = run && run.alloc; if (!A) return;
   if (A.step === 'i') A.step = 'p';
-  else if (A.step === 'p') { if (run.ptree.pts > 0 && !ask('패시브 포인트 ' + run.ptree.pts + '점을 남겨 둘까요? 다음 단계로 넘어가면 이 단계의 노드는 되돌릴 수 없습니다.')) return; A.step = run.ksPending > 0 ? 'k' : 'a'; if (A.step === 'k') ksEnsureOffer(run); }
+  else if (A.step === 'p') { if (run.ptree.pts > 0 && !ask('패시브 포인트 ' + run.ptree.pts + '점을 남겨 둘까요? 다음 단계로 넘어가면 이 단계의 노드는 되돌릴 수 없습니다.')) return; A.step = ksCanPick(run) ? 'k' : 'a'; }
   else if (A.step === 'k') A.step = 'a';
   if (A.step === 'a' && A.mode === 'mig') allocOldOrder(run);
   render(); if (typeof window !== 'undefined' && window.scrollTo) window.scrollTo(0, 0);
 }
-function allocAfterKs(run) { if (!(run.ksPending > 0)) { run.alloc.step = 'a'; if (run.alloc.mode === 'mig') allocOldOrder(run); } render(); }
+function allocAfterKs(run) { if (!ksCanPick(run)) { run.alloc.step = 'a'; if (run.alloc.mode === 'mig') allocOldOrder(run); } render(); }
 const allocOldOrder = run => { const old = run.skillsOld || []; const ix = x => old.indexOf(x) < 0 ? 99 : old.indexOf(x); run.skills = (run.skills || []).slice().sort((x, y) => ix(x) - ix(y)); atSync(run); };
 function allocConfirm(run, quiet) {
   const A = run && run.alloc; if (!A || A.step !== 'a') return;
@@ -110,7 +110,7 @@ function vAlloc(run) {
     const old = (run.skillsOld || []).map(id => (SK2[id] ? SK2[id].n : id) + (AT.nodes[id] ? '' : ' (더는 없는 스킬)'));
     return h + `<p>0.8.0에서 능력치 · 스킬 트리 · 각인이 두 트리로 바뀌었습니다. 포인트를 모두 돌려드렸습니다.</p><ul class="rcplain"><li>레벨 ${run.lv}${M.lv && M.lv !== run.lv ? ' (저장된 레벨 ' + M.lv + ')' : ''} · 패시브 <b>${run.ptree.pts}점</b> · 액티브 <b>${run.atree.pts}점</b></li><li>고를 큰 각인 <b>${run.ksPending}번</b></li><li>빠진 옛 각인: ${gone.length ? gone.map(esc).join(', ') : '없음'}</li><li>옛 장착 스킬: ${old.length ? old.map(esc).join(', ') : '없음'} (다시 열면 옛 순서대로 끼웁니다)</li>${M.battle ? '<li>싸우던 전투는 그 방의 처음으로 되돌렸습니다. 확정한 뒤 같은 방을 다시 싸웁니다.</li>' : ''}</ul><p class="mini">패시브 → 큰 각인 → 액티브 순서로 찍습니다. 다음 단계로 넘어가면 앞 단계는 고칠 수 없습니다. 확정해야 저장됩니다. 시작 스킬: ${T2.starters.map(id => esc(SK2[id].n)).join(', ')}.</p><div class="stickbar"><button class="gold wide" data-a="allocgo" data-focus>시작</button></div>`;
   }
-  if (A.step === 'p') return h + `<div class="row trd-bar">${trdListBtn()}</div>` + vPTreeAny(run) + `<div class="stickbar"><button class="gold wide" data-a="allocnext" data-focus>${run.ksPending > 0 ? '다음: 큰 각인 고르기' : '다음: 액티브 트리'}${run.ptree.pts ? ' (남은 ' + run.ptree.pts + '점)' : ''}</button>${A.mode === 'create' ? '<div class="row"><button data-a="cback" data-k="cls">이전: 직업 고르기</button><button data-a="createcancel">그만두기</button></div>' : ''}</div>`;
+  if (A.step === 'p') return h + `<div class="row trd-bar">${trdListBtn()}</div>` + vPTreeAny(run) + `<div class="stickbar"><button class="gold wide" data-a="allocnext" data-focus>${ksCanPick(run) ? '다음: 큰 각인 고르기' : '다음: 액티브 트리'}${run.ptree.pts ? ' (남은 ' + run.ptree.pts + '점)' : ''}</button>${A.mode === 'create' ? '<div class="row"><button data-a="cback" data-k="cls">이전: 직업 고르기</button><button data-a="createcancel">그만두기</button></div>' : ''}</div>`;
   if (A.step === 'k') return h + vKsPick(run);
   return h + `<div class="row trd-bar">${trdListBtn()}</div>` + vATreeAny(run) + `<div class="stickbar"><button class="gold wide" data-a="allocok" data-focus>${A.mode === 'create' ? '이 캐릭터로 시작하기' : '확정하고 이어 하기'}${run.atree.pts ? ' (남은 ' + run.atree.pts + '점)' : ''}</button>${A.mode === 'create' ? '<div class="row"><button data-a="createcancel">그만두기</button></div>' : ''}</div>`;
 }
@@ -127,7 +127,7 @@ function sheetParts(S) {
   if (S.kind === 'block') {
     title = '막힌 문 앞에서 아이템 하나를 고르세요';
     body = `<p class="mini">${S.data.retry ? '다시 하기 전에 다른 아이템으로 바꿔도 됩니다.' : ''}문 너머에는 정예 방패병과 정예 치유사, 정예 돌격병이 있습니다. 강타와 치유가 한꺼번에 몰려옵니다.</p>`;
-    for (const k of Object.keys(ITEMS).filter(k => ITEMS[k].kind === 'block')) body += itemCard(k, `<button class="gold" data-a="pickblock" data-k="${k}">이 아이템 끼우기</button>`);
+    for (const k of (GEAR8.on ? Object.keys(UNIQUE).filter(id => UNIQUE[id].cls === 'all' && !(run.uqSeen || []).includes(id)) : Object.keys(ITEMS).filter(k => ITEMS[k].kind === 'block'))) body += itemCard(GEAR8.on ? mkUq(k, run.ch) : k, `<button class="gold" data-a="pickblock" data-k="${k}">이 아이템 끼우기</button>`); /* 0.8.0 M6-2: 새 장비면 공용 고유 */
     body += `<div class="row"><button data-a="pickblock" data-k="">아이템 없이 들어가기</button><button data-a="blockback">아직 들어가지 않기</button></div>`;
   } else if (S.kind === 'drop') {
     const it = run.inv[S.data.uid]; const kind = tplKind(it.tpl); const sl = kind === 'ring' ? (!run.eqU.ring1 ? 'ring1' : !run.eqU.ring2 ? 'ring2' : 'ring1') : kind;
@@ -137,10 +137,10 @@ function sheetParts(S) {
     if(!(G.dropQ||[]).length)body += '<button class="wide" data-a="droporganize">가방에 두고 정리하기</button>';
   } else if (S.kind === 'bagfull') {
     const it = S.data.item; title = '가방이 가득 찼습니다'; const nc = (run.cons || []).length;
-    body = winSumHtml() + `<p class="lead">새 장비를 바로 장착하거나, 가방에서 하나를 비워 챙길 수 있습니다.</p>${itemDetail(it)}${shopCmp(run, it)}${rewardEquipButtons(run, it)}<button class="wide" data-a="bfskip">새 장비를 버리기</button><h4 class="bfh">또는 가방에서 하나를 버리고 새 장비를 받기</h4><div class="baglist">${run.bag.map(u => { const x = run.inv[u]; return `<div class="bagline"><div><span class="gr-${x.g}">${inm(x.tpl, x.g)}</span>${gradeTag(x.g)}<br><small class="mini">${EQ_SLOT_N[kindOf(ITEMS[x.tpl].slot) === 'ring' ? 'ring1' : ITEMS[x.tpl].slot].replace(' 1', '')} · ${baseText(x)}</small></div><button class="sm" data-a="bfdrop" data-k="${u}"${x.locked ? ' disabled' : ''}>${x.locked ? '잠김' : '이것을 버리기'}</button></div>`; }).join('')}</div>`;
+    body = winSumHtml() + `<p class="lead">새 장비를 바로 장착하거나, 가방에서 하나를 비워 챙길 수 있습니다.</p>${itemDetail(it)}${shopCmp(run, it)}${rewardEquipButtons(run, it)}<button class="wide" data-a="bfskip">새 장비를 버리기</button><h4 class="bfh">또는 가방에서 하나를 버리고 새 장비를 받기</h4><div class="baglist">${run.bag.map(u => { const x = run.inv[u]; return `<div class="bagline"><div><span class="gr-${x.g}">${inmIt(x)}</span>${gradeTag(x.g)}<br><small class="mini">${EQ_SLOT_N[tplKind(x.tpl) === 'ring' ? 'ring1' : tplKind(x.tpl)].replace(' 1', '')} · ${baseText(x)}</small></div><button class="sm" data-a="bfdrop" data-k="${u}"${x.locked ? ' disabled' : ''}>${x.locked ? '잠김' : '이것을 버리기'}</button></div>`; }).join('')}</div>`;
   } else if (S.kind === 'kitpick') { // 0.8.0 6단계 C: 꾸러미의 무기 · 갑옷을 셋 가운데 하나씩
     const K = run.kitPick || { opts: {} }; const sl = ['weapon', 'armor'].find(x => K.opts[x]); title = sl ? (EQ_SLOT_N[sl] || sl) + '을(를) 고르세요' : '꾸러미';
-    body = sl ? '<p class="lead">' + (GRADE[K.opts[sl].g] || GRADE.n).n + ' 등급, 직업에 맞는 셋 가운데 하나를 고릅니다. 고르지 않은 것은 사라집니다.</p>' + K.opts[sl].tpl.map(tpl => `<div class="bagline"><div>${itemDetail(mkItem(tpl, { g: K.opts[sl].g, ch: K.ch - 1 }))}</div><button class="gold" data-a="kitpick" data-s="${sl}" data-k="${tpl}">이것으로</button></div>`).join('') : '';
+    body = sl ? '<p class="lead">' + (GRADE[K.opts[sl].g] || GRADE.n).n + ' 등급, 직업에 맞는 셋 가운데 하나를 고릅니다. 고르지 않은 것은 사라집니다.</p>' + K.opts[sl].tpl.map(tpl => `<div class="bagline"><div>${itemDetail(K.opts[sl].its ? K.opts[sl].its[tpl] : mkItem(tpl, { g: K.opts[sl].g, ch: K.ch - 1 }))}</div><button class="gold" data-a="kitpick" data-s="${sl}" data-k="${tpl}">이것으로</button></div>`).join('') : '';
   } else if (S.kind === 'patrol') { // 0.8.0 6단계 A-6: 순찰대를 넘으면 패시브 포인트 +1(챕터에 AMBUSH.ptMax번) 또는 소모품 셋 중 하나
     const P = run.patrolPend || { cons: [] }, used = (run.patrolPt || {})[run.ch || 1] || 0, ptOk = used < AMBUSH.ptMax; title = '순찰대를 넘었습니다';
     body = '<p class="lead">하나를 고릅니다.</p><div class="row col">' + (ptOk ? `<button class="wide gold" data-a="patrolpick" data-k="pt" data-focus>패시브 포인트 +1 <small>(이번 챕터 ${used}/${AMBUSH.ptMax})</small></button>` : `<p class="mini">이번 챕터의 패시브 포인트는 ${AMBUSH.ptMax}번을 모두 받았습니다.</p>`)
@@ -155,7 +155,7 @@ function sheetParts(S) {
     body += `<div class="stickbar"><div class="row"><button class="gold wide" data-a="cptake" data-focus>${takeN ? '챙기기 (' + takeN + '개)' + (lostN ? ' · ' + lostN + '개는 두고 감' : '') : '모두 두고 가기'}</button></div></div>`;
   } else if (S.kind === 'changes') {
     title = '업데이트 내역';
-    const mj = CHANGELOG.findIndex(c => c.v === '0.7.0'), cut = mj >= 0 ? mj + 1 : CHANGELOG.length;
+    const mj = CHANGELOG.findIndex(c => c.v === VERSION), cut = mj >= 0 ? mj + 1 : CHANGELOG.length; // 0.8.0 M8: 지금 판의 통합 항목까지 펼치고, 0.7.0과 그 개발 중 항목은 "이전 공개판"으로 접는다
     const folded = c => `<details class="chgarchive"><summary><span><b>${esc(c.v)} · ${esc(c.t || '업데이트')}</b><small class="chgd">${esc(c.d || '')}</small></span></summary>${chgEntry(c, false)}</details>`;
     body = `<p class="mini">최근 변경부터 읽습니다. 이전 내역은 제목을 눌러 펼칩니다.</p>` + CHANGELOG.slice(0, cut).map((c, i) => i === 0 ? chgEntry(c, true) : folded(c)).join('') + (cut < CHANGELOG.length ? `<details class="chgdev"><summary>이전 공개판</summary>${CHANGELOG.slice(cut).map(folded).join('')}</details>` : '');
   } else if (S.kind === 'bossinfo' && S.data.foe) {
@@ -229,7 +229,7 @@ function sheetParts(S) {
   } else if (S.kind === 'choice') {
     title = S.data.chest ? '상자를 열었습니다' : '둘 중 하나만 가져갑니다';
     body = winSumHtml() + `<p class="lead">하나만 가져갑니다. 고르지 않은 쪽은 이 방에 남습니다. 고른 뒤 바로 끼울지 정합니다.</p>`;
-    for (const k of S.data.offer) body += itemCard(k, curLine(run, k) + `<button class="gold" data-a="choose" data-k="${k}">이것을 가진다</button>`);
+    for (const k of S.data.offer) body += itemCard(k, curLine(run, k) + `<button class="gold" data-a="choose" data-k="${k && typeof k === 'object' ? k.uid : k}">이것을 가진다</button>`);
     body += `<button data-a="choose" data-k="">둘 다 두고 간다</button>`;
   } else if (S.kind === 'awkview') {
     title = '큰 각인 · 중간 노드'; const own = run && run.ptree ? ptBuild(run.build) : null; const ks = own ? run.ptree.ks.map(id => own.nodes[id]) : []; const nt = own ? run.ptree.own.concat(run.ptree.free).map(id => own.nodes[id]).filter(n => n && n.kind === 'notable') : [];
@@ -237,10 +237,10 @@ function sheetParts(S) {
     body = `<p class="mini">던전이 끝나면 소멸되는 작은 힘입니다. 정산을 확정한 뒤와 2챕터부터의 야영지에서 하나씩 얻습니다. 대가는 없습니다.</p><div class="awklist">${own.length ? own.map(id => awkCard(id)).join('') : '<p class="mini">아직 얻은 각인이 없습니다.</p>'}</div>${S.data && S.data.from === 'equip' ? '<button class="wide" data-a="equip">장비로 돌아가기</button>' : ''}`;
   } else if (S.kind === 'fateres') {
     const r = S.data; title = r.ok ? '저울이 기웁니다' : '저울이 기울지 않았습니다';
-    body = `<p class="mini">올린 장비</p><div class="idet"><b class="gr-${r.from.g}">${inm(r.from.tpl, r.from.g)}</b></div>${r.ok ? `<p>한 단계 위 장비로 바뀌었습니다. 가방에 넣었습니다.</p>${itemDetail(r.to)}` : '<p>올린 장비는 사라졌습니다.</p>'}<button class="gold wide" data-a="close" data-focus>확인</button>`;
+    body = `<p class="mini">올린 장비</p><div class="idet"><b class="gr-${r.from.g}">${inmIt(r.from)}</b></div>${r.ok ? `<p>한 단계 위 장비로 바뀌었습니다. 가방에 넣었습니다.</p>${itemDetail(r.to)}` : '<p>올린 장비는 사라졌습니다.</p>'}<button class="gold wide" data-a="close" data-focus>확인</button>`;
   } else if (S.kind === 'offer') {
     title = '바칠 장비를 고르세요';
-    body = `<p class="mini">고른 장비는 사라지고, 한 등급 위의 장비 하나를 받습니다(희귀는 다시 희귀, 영웅 · 전설은 영웅).</p><div class="baglist">${run.bag.map(u => { const x = run.inv[u]; return `<div class="bagline"><div><span class="gr-${x.g}">${inm(x.tpl, x.g)}</span><br><small class="mini">${(GRADE[x.g] || GRADE.n).n} · ${baseText(x)}</small></div><button class="sm" data-a="offerpick" data-k="${u}"${x.locked ? ' disabled' : ''}>${x.locked ? '잠김' : '바친다'}</button></div>`; }).join('')}</div>`;
+    body = `<p class="mini">고른 장비는 사라지고, 한 등급 위의 장비 하나를 받습니다(희귀는 다시 희귀, 영웅 · 전설은 영웅).</p><div class="baglist">${run.bag.map(u => { const x = run.inv[u]; return `<div class="bagline"><div><span class="gr-${x.g}">${inmIt(x)}</span><br><small class="mini">${(GRADE[x.g] || GRADE.n).n} · ${baseText(x)}</small></div><button class="sm" data-a="offerpick" data-k="${u}"${x.locked ? ' disabled' : ''}>${x.locked ? '잠김' : '바친다'}</button></div>`; }).join('')}</div>`;
   } else if (S.kind === 'codex') {
     title = '보스 도감'; body = vCodex(); /* 78-records-ui.js */
   } else if (S.kind === 'itembook') {
