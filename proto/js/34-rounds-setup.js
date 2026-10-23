@@ -11,7 +11,7 @@ function roundOrder(b, consume, slowMe) {
   const grp = (u, isP) => { if (isP && (b.ambushR && (b.round || 0) === 0)) return 2; if (isP && !u.s.chill && fxList(u).some(([, f]) => f.first)) return 0; if (!isP && u.quick) return 0; if (u.s.haste) return 0; if (u.s.chill) return 2; return 1; };
   const ents = [{ id: 'p', g: grp(p, true), sp: pSpeed(b), i: -1 }].concat(al.map((e, i) => ({ id: e.id, g: grp(e, false), sp: eSpeed(b, e), i })));
   ents.sort((a, c) => a.g - c.g || c.sp - a.sp || a.i - c.i);
-  const out = ents.slice(); for (const x of ents) if (x.id !== 'p' && x.sp >= RND_TWICE) out.push(Object.assign({}, x, { twice: 1 })); // 두 번 움직이는 적
+  const out = ents.slice(); for (const x of ents) if (x.id !== 'p' && (x.sp >= RND_TWICE || b.fcTwice)) out.push(Object.assign({}, x, { twice: 1 })); // 두 번 움직이는 적(b.fcTwice: G-1 강적 시계, 비공개 문서 참조)
   const gale = p.build === 'hunter' && p.hnSt && p.hnSt.gale > 0; /* M5-4 질풍난사: 남은 라운드마다 두 번(가속) */
   if ((p.s.haste || gale) && p.build === 'hunter') { const i = out.findIndex(x => x.id === 'p'); out.splice(i + 1, 0, Object.assign({}, out[i], { extra: 1 })); if (consume) { b.pDouble = b.round || 0; if (gale && !p.s.haste) p.hnSt.gale--; } } /* 10월 18일 0.8.0 5단계(원거리 초안 10절 결정 1): startRound가 b.round를 먼저 올린 뒤 부르므로 지금 라운드가 두 번 움직이는 라운드다. 전에는 + 1이라 hastex(가속 라운드면 ×) · 연속 행동 표시가 그다음 라운드에 붙었다 */ // 가속 (10월 5일 만든 사람 결정): 사냥꾼 전용, 라운드 맨 앞에서 두 번 연달아 움직인다(한 라운드에 한 번). 두 번째 차례는 쿨타임이 줄지 않는다
   if (consume) {
@@ -72,10 +72,10 @@ function roomBattle(player, room, bossKind, seed) {
   if (!room.boss && room.floor) { const D = diffOf(room.ch)[isLower(room.floor) ? 'lower' : 'upper'], P = pathOf(room.path, room.mode); for (const e of en) { e.hpMax = Math.round(e.hpMax * D.hp * P.hp); e.hp = e.hpMax; e.dmg *= D.dmg * P.dmg; } }
   if (room.type === 'normal' && !room.boss && (NORMAL_ROOM.hp !== 1 || NORMAL_ROOM.dmg !== 1)) for (const e of en) { e.hpMax = Math.round(e.hpMax * NORMAL_ROOM.hp); e.hp = e.hpMax; e.dmg *= NORMAL_ROOM.dmg; } // 0.8.0 6단계 보정: 일반 방만
   if (room.ambush && !room.boss) for (const e of en) { e.hpMax = Math.round(e.hpMax * AMBUSH.hp); e.hp = e.hpMax; e.dmg *= AMBUSH.dmg; } // 매복: 일반과 강적 사이
-  if (room.strong && en[0]) { const e = en[0]; e.strong = true; e.foe = room.foe; const low = isLower(room.floor || 0); e.n = room.strong; e.hpMax = Math.round(e.hpMax * STRONG.hp * (low ? STRONG.lowerHp : 1)); e.hp = e.hpMax; { const F = STRONG_FOES.find(x => x.id === room.foe) || {}; e.hpMax = Math.round(e.hpMax * (F.hp || 1)); e.hp = e.hpMax; e.dmg *= F.dmg || 1; } e.dmg *= STRONG.dmg * (low ? STRONG.lowerDmg : 1); e.bigMul = HIT_REF(e.lv || 1) * STRONG.big / e.dmg; e.info = '강적. 무엇을 하는지는 겪어 보아야 안다.'; }
+  if (room.strong && en[0]) { const e = en[0]; e.strong = true; e.foe = room.foe; const low = isLower(room.floor || 0); e.n = room.strong; e.hpMax = Math.round(e.hpMax * STRONG.hp * (low ? STRONG.lowerHp : 1)); e.hp = e.hpMax; { const F = STRONG_FOES.find(x => x.id === room.foe) || {}; e.hpMax = Math.round(e.hpMax * (F.hp || 1)); e.hp = e.hpMax; e.dmg *= F.dmg || 1; } e.dmg *= STRONG.dmg * (low ? STRONG.lowerDmg : 1) * STRONG_GIM.dmg * ((typeof fc1K === 'function' && fc1K(room.foe) || {}).dmg || 1); /* G-1 강적 평소 공격 ×0.8. 1챕터는 강적마다 CLK1 dmg를 더 곱한다(비공개 문서 참조). 큰 한 방은 bigMul로 따로 */ e.bigMul = HIT_REF(e.lv || 1) * STRONG.big / e.dmg; e.info = '강적. 무엇을 하는지는 겪어 보아야 안다.'; }
   if (room.foe === 'bellringer') { const bell = mkEnemy('root', 0, 60, { lv: room.lv || 1 }); bell.n = '큰 종'; bell.ico = '🔔'; bell.bell = 1; bell.hpMax = Math.round(bell.hpMax * 1.2); bell.hp = bell.hpMax; bell.info = '큰 종. 후열. 스스로는 움직이지 않는다.'; en.push(bell); }
   { let hx = 0; for (const e of en) { e.xpCh = roomXpMul(room); if (e.role === 'hexer') e.hexOff = hx++; } for (const k of room.swift || []) { const e = en[k]; if (e && !e.strong) { e.swift = 1; e.hpMax = Math.round(e.hpMax * SWIFT.hp); e.hp = e.hpMax; } } }
-  { const ch = room.ch || 1, fl = room.boss ? FLOOR_BOSS : room.floor || 0, PH = room.boss ? 1 : pathOf(room.path, room.mode).hp * (room.ambush ? AMBUSH.hp : 1); for (const e of en) { const h = foeHitHp(e, ch, fl); if (h > 0) { e.hpMax = Math.max(1, Math.round(h * PH * (e.swift ? SWIFT.hp : 1))); e.hp = e.hpMax; } if (e.foe === 'pilgrim' && ch === 1) { e.fill = 0; e.fillMax = Math.round(e.hpMax * PILGRIM.fill); } } } // A1 타수 → 체력(data/foes.js FOE_HP_ON) · 순례자 배 채움 칸
+  { const ch = room.ch || 1, fl = room.boss ? FLOOR_BOSS : room.floor || 0, PH = room.boss ? 1 : pathOf(room.path, room.mode).hp * (room.ambush ? AMBUSH.hp : 1); for (const e of en) { const h = foeHitHp(e, ch, fl); if (h > 0) { e.hpMax = Math.max(1, Math.round(h * PH * (e.swift ? SWIFT.hp : 1))); e.hp = e.hpMax; } if (e.bell) { e.hpMax = e.hp = CLK1.bell.bellHp; } } } // A1 타수 → 체력(data/foes.js FOE_HP_ON). G-1 큰 종(비공개 문서 참조)
   if (room.mode === 'hard') for (const e of en) if (e.role !== 'root') { e.hpMax = Math.round(e.hpMax * MODES.hard.hp); e.hp = Math.min(e.hpMax, Math.round(e.hp * MODES.hard.hp)); } /* 가혹: 적 생명력 배율(지금 ×1) (피해 ×1.3은 hurtPlayer) */
   if (room.marks) markEnemies(en, room.marks); /* 표식 도전: 적 생명력 · 보스 생명력 */
   const mods = room.mods || [];
@@ -91,7 +91,8 @@ function roomBattle(player, room, bossKind, seed) {
   if ((room.ch || 1) >= 3) { if (OLD3) ch3Setup(b, room); if (pre.ignite) addS(b, player, 'ignite', pre.ignite); if (pre.chill) addS(b, player, 'chill', pre.chill); if (pre.bleed) addS(b, player, 'bleed', pre.bleed); }
   if ((room.ch || 1) === 2) { ch2Setup(b, room); if (pre.ignite) addS(b, player, 'ignite', pre.ignite); } // A2 2챕터 시작(정예 접사 · 대형 · 바르도 등불 · 이벤트 흔적) // 3챕터: 열기 · 아지랑이 · 붕대 · 화염 강화 · 강적 값, 이벤트가 붙인 시작 상태
   if ((room.ch || 1) === 3 && !OLD3) w3Setup(b, room); // A3 3챕터 시작(접사 · 강적 물체 · 경보 · 종 표식 · 잠식 · 이벤트 흔적)
-  chDev(b, 'onRoomStart'); // A0 챕터 장치(A1: 난수를 정한 뒤로 옮김)
+  chDev(b, 'onRoomStart'); // A0 챕터 장치
+  fcEv(b, 'onRoomStart'); // G-1 강적 시계(A1: 난수를 정한 뒤로 옮김)
   // 0.8.0 6단계 A-6: 순찰대(내부 키 ambush)는 먼저 덮치지 않는다(전에는 첫 라운드에 내가 맨 뒤)
   runUntilPlayer(b);
   return b;

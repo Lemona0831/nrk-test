@@ -27,6 +27,7 @@ function addS(b, u, k, dur, stacks, max) {
     if (nv > cur && isCh3(b)) ch3OnStatus(b, u, k, nv - cur);
     if (u !== b.p && KW_BAD.includes(k) && nv > cur) chargeEv(b, k === 'poison' ? 'poison' : 'apply');
     if (nv > cur && u !== b.p && b.cur && (k === 'ignite' || k === 'chill') && b.p.build === 'elementalist') { const a = b.elSt && b.elSt.a === b.actN ? b.elSt : (b.elSt = { a: b.actN }); a[k] = 1; } // 10월 18일 0.8.0 5단계 원소술사: 이 행동이 건 원소 (가벼운 손 · 고른 원소)
+    if (nv > cur && u !== b.p && u.strong && b.cur && (k === 'bleed' || k === 'poison' || k === 'ignite')) fcEv(b, 'onFoeDotOn', u, k); // G-1 강적 시계: 내 행동이 강적에게 지속 피해를 걸었다
     return nv - cur;
   }
   if (u === b.p && DEBUFFS.includes(k)) {
@@ -52,12 +53,13 @@ function pSpeed(b) {
   s *= 1 + 0.005 * stat(p, 'dex');
   return clamp(s, 0.7, 1.5);
 }
-function eSpeed(b, e) { let s = e.spd * (hasMod(b, 'bell') || hasMod(b, 'drums') ? 1.1 : 1); if (e.foe === 'pilgrim' && e.hp < e.hpMax * 0.5) s *= STRONG.frenzy; if (b.enrage && e.role === 'boss') s *= 1.3; return s; }
+function eSpeed(b, e) { let s = e.spd * (hasMod(b, 'bell') || hasMod(b, 'drums') ? 1.1 : 1); if (b.enrage && e.role === 'boss') s *= 1.3; return s; }
 
 /* 1T 경계마다 전역 처리 */
 function tickOnce(b) {
   b.tick++; const T = b.tick; const p = b.p;
   chDev(b, 'onRoundEnd'); // A0 챕터 장치
+  fcEv(b, 'onRoundEnd'); // G-1 강적 시계
   expireAll(b);
   for (const e of alive(b)) if (e.pile && e.pile.born < T) { e.pile.wait--; if (e.pile.wait <= 0) riseSkel(b, e, ''); } // 뼈 더미: 그 라운드에 생긴 더미는 줄지 않는다
   for (const w of alive(b)) if (w.role === 'bonewall' && !b.en.some(m => m.id === w.wallOf && m.alive)) { w.alive = false; w.hp = 0; logp(b, 'good', '쌓은 자가 쓰러져 뼈벽이 무너진다'); }
@@ -84,7 +86,6 @@ function tickOnce(b) {
   if (isCh2(b)) { ch2Tick(b, T); if (b.over) return; }
   if (isW3(b)) { w3Tick(b, T); if (b.over) return; } // A3 재액의 틈 · 낙석 · 잠식된 접사 · 벽돌 · 명사수 // A2 구경꾼 · 빗속 · 빚 · 함성 · 그림자 하수인
 
-  { const rg = alive(b).find(e => e.foe === 'bellringer'); const bell = alive(b).find(e => e.bell); if (rg && bell && T % STRONG.bellEvery === 0) { for (const x of alive(b)) if (x.role !== 'root') x.quick = 1; logp(b, 'bad', rg.n + '이(가) 줄을 당긴다. 종이 울린다'); codexHit(b, 'bellringer', 'ring'); } }
   if (boss && boss.boss === 'tree') {
     if (T % 4 === 0) { b.season = (b.season + 1) % 4; logp(b, 'sys', '계절이 바뀐다. 이제 ' + SEASONS[b.season]); }
     const roots = alive(b).filter(e => e.role === 'root').length;
@@ -178,7 +179,7 @@ function hurtPlayer(b, raw, o) {
   // 1회 행동 피해 상한 (4.6): 일반 25%, 정예 35% (보스는 기믹 제외)
   if (!o.dot && b.ctx && b.ctx.mode === 'hard') d *= MODES.hard.dmg; /* 가혹: 직접 피해 ×1.3, 한 번 피해 상한은 곱한 뒤에 그대로 */
   if (!o.dot && b.ctx && b.ctx.marks && b.ctx.marks.indexOf('dmg') >= 0) d *= MARKS.dmg.dmg; /* 표식 도전: 직접 피해 ×1.2 (표식이 없으면 건너뜀) */
-  if (o.src && !o.dot) { const cap = o.src.role === 'boss' ? 0.45 : o.src.elite ? 0.35 : 0.25; d = Math.min(d, p.hpMax * cap); }
+  if (o.src && !o.dot) { const cap = o.cap ? o.cap : o.src.role === 'boss' ? 0.45 : o.src.elite ? 0.35 : 0.25; d = Math.min(d, p.hpMax * cap); } // o.cap: G-1 강적 파국은 생명력 비율로 정한 값
   if (o.maxD != null) d = Math.min(d, o.maxD); // 연타의 합 상한 (3챕터 칼춤: 내 화상 몫까지 넣는다)
   if (isCh3(b) && !o.dot && (o.aoe || o.spell) && !b.enrage) d = Math.min(d, HIT_REF((o.src && o.src.lv) || b.ctx.lv || 1) * UNAVOID_CAP * (p.guard && !o.judgment ? 0.5 : 1)); // 2절 8번: 피할 수 없는 피해는 막기 전 기준 생명력 × 0.30까지(취약 · 강화 · 정예 뒤에 자름, 광폭만 예외)
   d = Math.max(0, d);
@@ -312,6 +313,8 @@ function foeArmor0(b, e, d, o) {
 function hurtEnemy(b, e, raw, o) {
   o = o || {};
   if (!e.alive) return 0;
+  if (e.bell) { if (!o.dot && (b.cur || o.ctr)) fc1BellCrack(b, e, fc1BrkAct(b) ? 2 : 1); return 0; } // G-1 큰 종(비공개 문서 참조)
+  if (e.fcInv != null && e.fcInv === (b.round || 0)) { if (!o.dot && !o.silent) logp(b, 'sys', '행렬이 ' + e.n + '을(를) 감싸 공격이 닿지 않는다'); return 0; } // G-1 납골당 주교(비공개 문서 참조)
   let d = raw;
 
   if (e.s.weak && false) d *= 1;
@@ -341,6 +344,7 @@ function hurtEnemy(b, e, raw, o) {
   if (!o.dot && (b.cur || o.ctr)) { const hp = fxAdd(b.p, 'hitP', b, b.p, e, o, b.cur); if (hp) d *= 1 + Math.max(-FX_CAP, Math.min(FX_CAP, hp)); } /* 2챕터 장비(IFX2): 장비끼리 더해 한 번 곱한다 */
   if (o.dot && e !== b.p) { const dp = fxAdd(b.p, 'dotP', b, b.p, e, o); if (dp) d *= 1 + Math.max(-FX_CAP, Math.min(FX_CAP, dp)); }
   d = kwTaken(b, e, d, o);
+  if (e.fcTk && e.fcTk.r >= (b.round || 0)) d *= e.fcTk.m; // G-1 강적 시계의 무방비(비공개 문서 참조)
   const boss = b.en.find(x => x.role === 'boss' && x.alive);
   if (boss && boss.boss === 'tree' && e.role === 'boss' && !o.dot) {
     if (b.season === 2 && o.single) { b.missToggle = !b.missToggle; if (b.missToggle) { logp(b, 'sys', '낙엽 사이로 공격이 빗나간다'); return 0; } }
@@ -361,11 +365,11 @@ function hurtEnemy(b, e, raw, o) {
   const held = e.role === 'boss' && e.hp > 0 && e.hp > hp0 - d + 0.001 ? Math.max(0, d - actualDealt) : 0; // 보스 단계 문턱 · 최소 체류로 막힌 몫
   if (held > 0) e.bank = r1((e.bank || 0) + held * BOSS_BANK); // 10월 15일(만든 사람 결정): 막힌 피해는 버리지 않고 쌓았다가 문이 열리면 넣는다
   const damageStats = b.damageStats || (b.damageStats = { v: 0, dealt: 0, taken: 0 }); damageStats.dealt += actualDealt;
+  if (o.dot && e.strong && actualDealt > 0) fcEv(b, 'onFoeDot', e, actualDealt); // G-1 강적 시계
   b.rec.push({ k: 'dealt', t: r1(b.t), d: r1(actualDealt), role: e.role, a: o.label || b.curSkill || (b.cur && b.cur.id) || '공격', dot: !!o.dot }); if (b.p.build === 'hunter' && b.extraTurn && b.cur) b.rec[b.rec.length - 1].x2 = 1; // 0.8.0 5단계 측정(원거리 초안 2-10): 사냥꾼 가속의 두 번째 차례에 준 피해
   if (e.chant && d > 0 && e.hp > 0) { e.chant.taken += d; if (e.chant.taken >= e.chant.need) chantBreak(b, e, '쌓인 상처에'); } // 화형 사제: 영창 중 받은 피해
   if (!o.dot && b.cur) fxRun(b.p, 'onHit', b, b.p, e, o, b.cur, d, Math.max(0, hp0 - Math.max(0, e.hp)));
   if (e.countering && e.hp > 0 && !o.dot && o.melee && o.single) { e.countering = 0; hurtPlayer(b, enemyHitEst(b, e), { src: e, single: 1, counter: 1, label: e.n + '이(가) 되받아친다' }); } // 반격 태세
-  if (e.foe === 'pilgrim' && !e.frenzy && e.hp < e.hpMax * 0.5 && e.hp > 0) { e.frenzy = 1; logp(b, 'bad', e.n + '의 눈이 번들거린다. 더 빨라진다'); codexHit(b, 'pilgrim', 'frenzy'); }
   if (!o.dot && b.p.build === 'berserker') addRage(b, 1);
   if (!o.silent && d > 0) { const hw = held >= 0.05 ? ' (쌓임 ' + r1(held) + ' · ' + ((bossDwell(e) || {}).last ? '버티는 중' : '단계 문턱') + ')' : ''; const shown = held >= 0.05 ? actualDealt : d; logp(b, o.dot ? 'sys' : 'good', o.dot ? (o.label || '피해') + '이(가) ' + e.n + '을(를) 갉아먹는다. ' + r1(shown) + ' 피해' + hw : e.n + '에게 ' + r1(shown) + ' 피해' + hw); }
   if (W0 && d > 0) { const m = []; if (W0.wk) m.push('약화 ' + W0.wk + '로 내 피해 −25%'); if (W0.em) m.push((b.p.build === 'monk' ? '기 ' : '강화 ') + W0.em + '로 +25%'); if (W0.vu) m.push('취약 ' + W0.vu + '로 +25%'); if (W0.pr) m.push('보호 ' + W0.pr + '로 −25%'); if (W0.br && !fullF && !o.shock) m.push('버티는 중이라 ' + Math.round((1 - EKW.braceRed) * 100) + '% 줄어듦'); if (W0.wr) m.push('붕대로 −' + Math.round(WRAP.cut * 100) + '%'); if (W0.bw) m.push('뼈벽 뒤라 줄어듦'); if (W0.ig) m.push('화상 ' + W0.ig + '이 터져 더해짐'); if (m.length) whyPush(b, { side: 'out', n: e.n, f: W0.f, d: r1(d), m }); }
@@ -413,13 +417,11 @@ function killEnemy(b, e) {
   if (e.boss === 'abbot') { for (const x of b.en) if (x.alive && (x.monk || x.role === 'candle')) { x.alive = false; x.hp = 0; } } // 수도원장이 쓰러지면 수도사와 촛불도 흩어진다
   if (e.loot) { returnLoot(b, e.loot); logp(b, 'good', e.loot.n + '을(를) 되찾는다'); e.loot = null; }
   if (e.foe === 'bishop') { const cs = corpsesOf(b); for (const c of cs) { c.alive = false; c.hp = 0; } if (cs.length) logp(b, 'good', (FOES.bishop.corpseN || '시체') + '들이 무너진다'); }
-  if (e.foe === 'cantor') hymnReset(b);
   if (e.foe === 'scribe' && (b.seal || []).length) { b.seal = []; logp(b, 'good', '봉인이 풀린다'); }
   if (b.p.build === 'warlock' && (e.s.weak || e.s.vuln)) { const hl = b.p.hpMax * CLS_TUNE.warlockKill; b.p.hp = Math.min(b.p.hpMax, b.p.hp + hl); logp(b, 'good', '꺼져 가는 혼을 들이마신다. 생명력 +' + r1(hl)); }
   b.xp = (b.xp || 0) + xpOf(e);
   rollDrops(b, e);
-  if (e.bell) { const rg = b.en.find(x => x.foe === 'bellringer' && x.alive); if (rg) { rg.stun = 1; logp(b, 'crit', '큰 종이 깨진다. ' + rg.n + '이(가) 비틀거린다'); } codexHit(b, 'bellringer', 'bellbreak'); }
-  if (e.foe === 'pilgrim') { b.rotted = 1; logp(b, 'bad', e.n + '의 몸이 무너지며 썩은 냄새가 퍼진다'); codexHit(b, 'pilgrim', 'rot'); }
+  if (e.bell) fc1BellDown(b); // G-1 종지기 시계(비공개 문서 참조)
   if (e.s.plague) { let n = 0; for (const x of alive(b)) if (x.role !== 'root') { addS(b, x, 'weak', aoeN(2)); addS(b, x, 'plague', 4); n++; } if (n) logp(b, 'good', '역병이 남은 적들에게 옮는다'); }
   fxRun(b.p, 'onKill', b, b.p, e);
   chargeEv(b, 'kill'); ysPreKill(b, e); // 10월 15일 유산 1차 시제품: 먼저 치우기
@@ -427,8 +429,9 @@ function killEnemy(b, e) {
   for (const x of alive(b)) if (x.role === 'drill' && x !== e && !e.summoned) x.orderNext = 1; // A1 수련장 성향: 동료가 쓰러지면 남은 동료를 먼저 다그친다
   if (e.boss === 'abbot' && (b.ctx.ch || 1) === 1 && FOES.abbot.log.line) logp(b, 'crit', e.n + ': ' + FOES.abbot.log.line); // A1 마지막 한 마디(만든 사람)
   chDev(b, 'onFoeDown', e); // A0 챕터 장치
+  fcEv(b, 'onFoeDown', e); // G-1 강적 시계(쓰러진 강적 자신은 처리기에서 빠진다)
 }
-function checkEnd(b) { const was = b.over; checkEnd0(b); if (!was && b.over) chDev(b, 'onRoomEnd', b.over); } // A0 챕터 장치: 방이 끝날 때 한 번
+function checkEnd(b) { const was = b.over; if (b.consF && b.consF !== b.fcConsF) { b.fcConsF = b.consF; fcEv(b, 'onCons'); } /* G-1 강적 시계: 전투 중 소모품을 썼다(js/26 consUse가 바로 checkEnd를 부른다) */ checkEnd0(b); if (!was && b.over) chDev(b, 'onRoomEnd', b.over); } // A0 챕터 장치: 방이 끝날 때 한 번
 function checkEnd0(b) {
   if (b.over) return;
   if (b.p.hp <= 0 && b.ctx.safe) { b.p.hp = 1; logp(b, 'good', '수련장의 짚 인형처럼 버틴다. 여기서는 쓰러지지 않는다(생명력 1)'); }
