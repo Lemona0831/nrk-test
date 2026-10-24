@@ -2,6 +2,7 @@
 function onClick(ev) {
   const el = ev.target.closest('[data-a]'); if (!el) return;
   const a = el.dataset.a;
+  if (G.tabStale) { if (a === 'tabreload') location.reload(); else if (!G.sheet || G.sheet.kind !== 'tabstale') openSheet('tabstale', {}); return; } // 10월 24일 S-4: 다른 탭이 저장한 뒤의 이 탭은 다시 불러오기만 받는다(js/64 tabWatch)
   if (G.cloud && G.cloud.loading && !['menu', 'help', 'changes', 'settings', 'sndtoggle', 'close', 'closebg'].includes(a)) { toast('계정 세이브를 불러오는 중입니다. 잠시 기다려 주세요.'); return; }
   if (G.hudEd) { hudEdClick(a, el); return; } /* 화면에서 편집하는 동안은 편집 단추만 일한다(전투는 멈춤) */
   if (G.menuOpen && !ev.target.closest('.hdr')) { G.menuOpen = false; render(); if (a === 'closebg') return; } // 펼친 메뉴 밖을 누르면 닫는다
@@ -113,26 +114,18 @@ function onClick(ev) {
     case 'itembook': openSheet('itembook', {type:'gear',q:'',ch:'all',group:'all',grade:'all',page:0}); break;
     case 'ibopen': case 'ibback': case 'ibpage': case 'ibtype': case 'ibreset': itemBookClick(a,el); break;
     case 'toasts': openSheet('toasts'); break;
-    case 'rest': { const run = G.run, p = run.p, R = roomDef();
+    case 'rest': { const run = G.run, p = run.p, R = roomDef(); if (R.type !== 'camp' && R.type !== 'spring') break; // 10월 24일 S-5: 다시 그리기 전 두 번째 누름이 다음 층(문 앞)에서 샘을 한 번 더 쓰고 한 층을 건너뛰었다
       if (R.type === 'camp') { const C = campInit(run); if (C.rested) break; C.rested = 1; p.hp = Math.min(p.hpMax, p.hp + p.hpMax * CAMP_REST.hp); p.mp = p.mpMax; p.st = p.stMax; for (const fk of ['life', 'mana', 'stam']) p.flask[fk] = Math.min(flaskCap(p, fk), (p.flask[fk] || 0) + 1); saveRunLocal(); saveCur(); toast('불가에서 쉬었습니다. 생명력 +' + Math.round(CAMP_REST.hp * 100) + '%, 스태미나와 플라스크가 찼습니다'); render(); ksOpen(); break; } // 10월 14일 개편 5단계: 쉬어도 야영지에 남는다(떠나기는 campleave)
       const sp = 0.5 * (1 + fxVal(p, 'spring', 0, (a, v) => a + v)); p.hp = Math.min(p.hpMax, p.hp + p.hpMax * sp); p.mp = Math.min(p.mpMax, p.mp + p.mpMax * sp);
       p.flask.life = Math.min(flaskCap(p, 'life'), p.flask.life + 1 + fxVal(p, 'springLife', 0, (a, v) => a + v)); p.flask.mana = Math.min(flaskCap(p, 'mana'), p.flask.mana + 1); p.flask.stam = Math.min(flaskCap(p, 'stam'), (p.flask.stam || 0) + 1);
       run.rooms.push({ room: run.room, type: 'spring', spring: 1 }); advanceFloor(); toast('샘물로 상처를 씻었습니다'); render(); break; }
-    case 'shrine': { const run = G.run, R = roomDef(); if (el.dataset.k === '1') { run.buffs[R.shrine] = 4; toast('성소의 힘이 3개 방 동안 함께합니다'); } run.rooms.push({ room: run.room, type: 'shrine', took: el.dataset.k === '1' ? R.shrine : null }); advanceFloor(); render(); break; }
-    case 'altar': { const run=G.run,p=run.p,R=roomDef(),yes=el.dataset.k==='1';
+    case 'shrine': { const run = G.run, R = roomDef(); if (R.type !== 'shrine') break; /* 10월 24일 S-5: 두 번째 누름이 층을 건너뛰었다 */ if (el.dataset.k === '1' && shrineOf(R)) { run.buffs[R.shrine] = 4; toast('성소의 힘이 3개 방 동안 이어집니다'); } run.rooms.push({ room: run.room, type: 'shrine', took: el.dataset.k === '1' && shrineOf(R) ? R.shrine : null }); advanceFloor(); render(); break; }
+    case 'altar': { const run=G.run,p=run.p,R=roomDef(),yes=el.dataset.k==='1'; if(R.type!=='altar')break; // 10월 24일 S-5: 두 번째 누름이 층을 건너뛰었다
       if(yes && R.altar==='offer'){openSheet('offer',{});break;}
-      const paid=[],received=[],drops=[];const hpBefore=p.hpMax, gainBefore=(run.consGainLog||[]).length;
+      const paid=[],received=[],drops=[];const hpBefore=p.hpMax;
       if(yes && R.altar==='oath'){p.hpBonus=(p.hpBonus||0)+OATH.hp;applyGear(run);run.dg.oath=1;paid.push('이 챕터 동안 배수로를 고를 수 없음');received.push('최대 생명력 '+hpBefore+' → '+p.hpMax+' (이 캐릭터가 끝날 때까지)');} // A3 수비대의 맹세
-      if(yes && R.altar==='debt'){gainGold(run,DEBT_ALTAR.gold,'빚의 제단');run.shopMarkup=DEBT_ALTAR.markup;paid.push('다음 상점 값 +'+Math.round(DEBT_ALTAR.markup*100)+'% (한 번)');received.push('골드 '+DEBT_ALTAR.gold);} // A2 빚의 제단
+      if(yes && R.altar==='debt'){gainGold(run,DEBT_ALTAR.gold,'빚의 제단');run.shopMarkup=DEBT_ALTAR.markup;paid.push('챕터 끝 상점 값 +'+Math.round(DEBT_ALTAR.markup*100)+'% (한 번)');received.push('골드 '+DEBT_ALTAR.gold);} // A2 빚의 제단
       if(yes && R.altar==='blood'){p.hpPen=(p.hpPen||0)+.05;applyGear(run);paid.push('최대 생명력 '+hpBefore+' → '+p.hpMax+' (이 캐릭터가 끝날 때까지)');const it=mkItem(dropKey(run,'r'));drops.push(it);received.push((GRADE[it.g]||GRADE.n).n+' '+itName(it));}
-      if(yes && (R.altar==='ash'||R.altar==='bone')){
-        const cost=altarConsCost(run,R.altar);if(!cost.length){toast('바칠 소모품이 모자랍니다');break;}
-        paid.push(...cost);
-        if(R.altar==='ash'){burnCons(run,4);for(let k=0;k<2;k++){const ids=Object.keys(CONS).filter(x=>CONS[x].ch===3&&CONS[x].use!=='none');consGrant(run,pickR(ids),'m',1);}}
-        else {takeCons(run,3);for(let k=0;k<2;k++)giveChCons(run,run.ch||1);}
-        received.push(...(run.consGainLog||[]).slice(gainBefore).map(c=>consName(c)+' ×'+c.n+(c.pending?' (가방 정리 후 선택)':'')));
-      }
-      if(yes && R.altar==='scale'){p.hpPen=(p.hpPen||0)+.03;applyGear(run);paid.push('최대 생명력 '+hpBefore+' → '+p.hpMax+' (이 캐릭터가 끝날 때까지)');received.push('능력치 포인트 +1');}
       if(yes && R.altar==='gold'){
         const cost=altarGold(run);if(run.gold<cost){toast('골드가 모자랍니다');break;}run.gold-=cost;paid.push('골드 '+cost);
         for(const fk of ['life','mana','stam']){const before=p.flask[fk]||0;p.flask[fk]=Math.min(flaskCap(p,fk),before+1);received.push(({life:'생명력',mana:'정화',stam:'스태미나'})[fk]+' 플라스크 '+before+' → '+p.flask[fk]+(before===p.flask[fk]?' (최대 충전)':''));}
@@ -140,7 +133,6 @@ function onClick(ev) {
       const receipt=yes?altarReceipt(run,R.altar,paid,received):null;
       run.rooms.push({room:run.room,ch:run.ch||1,type:'altar',took:yes?R.altar:null,exchange:receipt});advanceFloor();
       if(yes)toast('바친 것: '+paid.join(', ')+'\n받은 것: '+received.join(', '));
-      if(yes&&R.altar==='scale'){ptBonus(run,1,'유리 저울');} // 10월 16일 0.8.0 2단계: 능력치 1점 → 패시브 포인트 1
       queueDrops(drops);break; }
     case 'gamble': { const run = G.run; if (!run || run.phase !== 'shop') break; const r = gambleDraw(run, el.dataset.k); if (r.why) { toast(r.why); break; } sfx('coin'); toast(`${(GRADE[r.it.g] || GRADE.n).n} ${itName(r.it)}이(가) 나왔습니다. 가방에 넣었습니다`); saveRunLocal(); saveCur(); render(); break; }
     case 'fate': { const run = G.run, R = run && run.cur; if (!R || R.type !== 'fate') break; const r = fateRun(run, el.dataset.k); if (!r) { toast('올릴 수 없는 장비입니다'); break; } advanceFloor(); openSheet('fateres', r); break; }
@@ -148,7 +140,7 @@ function onClick(ev) {
     case 'kspick': { const run = G.run; if (!run) break; const why = ksTake(run, el.dataset.k); if (why) { toast(why); break; } const kn = '큰 각인: ' + ptBuild(run.build).nodes[el.dataset.k].n; if (run.alloc) { toast(kn); allocAfterKs(run); break; } G.sheet = null; toast(kn); saveRunLocal(); saveCur(); if (!ksOpen()) render(); break; } // 10월 16일 0.8.0 2단계
     case 'awkview': if (!runLive()) break; hidePop(); openSheet('awkview', { from: el.dataset.from || '' }); break;
     case 'offerpick': { const run = G.run, it = run.inv[el.dataset.k]; if(itemRemoveWhy(run,it&&it.uid)){toast(itemRemoveWhy(run,it.uid));break;} if (!it) break; const up = it.g === 'n' ? 'm' : it.g === 'm' || it.g === 'r' ? 'r' : 'h'; const k2 = dropKey(run, up, [it.tpl]); const reward=mkItem(k2),receipt=altarReceipt(run,'offer',[(GRADE[it.g]||GRADE.n).n+' '+itName(it)],[(GRADE[reward.g]||GRADE.n).n+' '+itName(reward)]); discardUid(run, it.uid); G.sheet = null; run.rooms.push({ room: run.room, type: 'altar', took: 'offer', gave: it.tpl, exchange: receipt }); advanceFloor(); toast('바친 것: '+receipt.paid.join(', ')+'\n받은 것: '+receipt.received.join(', ')); queueDrops([reward]); break; }
-    case 'event': { const run = G.run, p = run.p, R = roomDef(), o = el.dataset.k; const drops = []; run.next = run.next || {};
+    case 'event': { const run = G.run, p = run.p, R = roomDef(), o = el.dataset.k; if (R.type !== 'event' && R.type !== 'checkpoint') break; /* 10월 24일 S-5: 두 번째 누름이 다음 층에서 한 번 더 넘기거나, 깨어난 전투 방(이벤트 이름이 남는다)에서 이벤트를 다시 굴렸다 */ const drops = []; run.next = run.next || {};
       if (FLASK_PICK_EV.includes(R.event + ':' + o)) { const T = flaskTies(p); if (T.length >= 2 && !T.includes(el.dataset.f)) { openSheet('flaskpick', { ev: R.event, o, ties: T }); break; } G.evFlask = el.dataset.f || null; if (G.sheet && G.sheet.kind === 'flaskpick') G.sheet = null; } // 가장 많이 찬 플라스크가 둘 이상이면 고른다
       if (R.event === 'confess' && o === 'do') { run.next.pre = Object.assign({}, run.next.pre, { weak: 3, vuln: 3 }); drops.push(mkItem(dropKey(run, 'r'))); }
       if (R.event === 'pilgrim' && o === 'loot') { run.next.pre = Object.assign({}, run.next.pre, { poison: 3 }); drops.push(mkItem(dropKey(run, rollGradeCh(run.ch, 'room')))); }
@@ -162,31 +154,6 @@ function onClick(ev) {
       if (R.event === 'monk' && o === 'feed') { flaskTake1(p, G.evFlask); run.next.extraDrop = (run.next.extraDrop || 0) + 1; }
       if (R.event === 'monk' && o === 'chase') run.next.chase = 1;
       if (R.event === 'bell' && o === 'pull') { run.dg.force = 'strong'; gainGold(run, 15, '종이 울립니다'); }
-      if (R.event === 'tomb' && o === 'carve') { p.hpBonus = (p.hpBonus || 0) + 5; applyGear(run); run.next.pre = Object.assign({}, run.next.pre, { weak: 2, vuln: 2 }); }
-      if (R.event === 'bonetrader' && o === 'gear') { const u = run.bag.find(u=>!itemRemoveWhy(run,u)); if (u && run.inv[u]) { const g = run.inv[u].g; discardUid(run, u); drops.push(mkItem(dropKey(run, g))); } else toast('넘길 장비가 가방에 없습니다'); }
-      if (R.event === 'bonetrader' && o === 'cons') { if (takeCons(run, 3)) giveChCons(run, run.ch || 1); else toast('넘길 소모품이 모자랍니다'); }
-      if (R.event === 'coffin' && o === 'break') { if (Math.random() < 0.5) drops.push(mkItem(dropKey(run, 'r'))); else { run.next.coffin = 1; toast('관 뚜껑이 안에서 밀려 올라온다'); } }
-      if (R.event === 'procession' && o === 'follow') run.buffs.procession = 4;
-      if (R.event === 'procession' && o === 'block') run.next.block = 1;
-      if (R.event === 'master' && o === 'read') { const c = refundDeepest(run); toast(c ? atBuild(run.build).nodes[c].n + ' 노드를 되돌렸습니다. 액티브 포인트 +1' : '되돌릴 노드가 없습니다'); }
-      if (R.event === 'robber' && o === 'loot') { if (Math.random() < 0.5) gainGold(run, 30, '자루에서 골드가 나왔습니다'); else drops.push(mkItem(dropKey(run, rollGradeCh(run.ch, 'room')))); run.next.pre = Object.assign({}, run.next.pre, { poison: ((run.next.pre || {}).poison || 0) + 3 }); }
-      if (R.event === 'robber' && o === 'bury') p.flask.life = Math.min(flaskCap(p, 'life'), p.flask.life + 1);
-      if (R.event === 'blackwell' && o === 'drink') { p.flask.mana = Math.min(flaskCap(p, 'mana'), p.flask.mana + 1); p.flask.stam = Math.min(flaskCap(p, 'stam'), (p.flask.stam || 0) + 1); run.next.pre = Object.assign({}, run.next.pre, { vuln: 2 }); }
-      if (R.event === 'camel' && o === 'loot') { const ids = Object.keys(CONS).filter(k => (CONS[k].ch || 1) <= 3 && CONS[k].use !== 'none'); for (let k = 0; k < 3; k++) consGrant(run, pickR(ids), 'n', 1); n3pre(run, 'ignite', 2); toast('짐에서 소모품 셋을 찾았습니다. 다음 전투에 화상 2'); }
-      if (R.event === 'camel' && o === 'bury') consGrant(run, 'herb', 'n', 2); // 10월 14일: 선인장 수액을 없앴다
-      if (R.event === 'oasis' && o === 'drink') { if (Math.random() < 0.5) { p.hp = Math.min(p.hpMax, p.hp + p.hpMax * 0.3); toast('샘물이 상처를 씻어 낸다. 생명력 30%'); } else { n3pre(run, 'chill', 2); toast('물이 무겁게 가라앉는다. 다음 전투에 둔화 2'); } }
-      if (R.event === 'oasis' && o === 'fill') consGrant(run, 'cleanse', 'n', 1); // 10월 14일: 찬물 한 병 → 정화 약
-      if (R.event === 'sundial' && o === 'turn') { run.dg.reveal = (run.dg.reveal || []).concat([run.room + 1]); run.next3 = Object.assign(run.next3 || {}, { noon: 50 }); }
-      if (R.event === 'sundial' && o === 'hasten') { run.dg.force = 'strong'; gainGold(run, 25, '해가 기운다'); }
-      if (R.event === 'archive' && o === 'pull') n3pre(run, 'ignite', 4);
-      if (R.event === 'archive' && o === 'sweep') gainGold(run, 25, '재 속에서 금박을 쓸어 담았습니다');
-      if (R.event === 'names' && o === 'call') { const gv = (G.data.graves || []).find(x => x.cname && x.id !== run.id); const g = gv ? Math.min(40, (gv.lv || 1) * 4) : 10; gainGold(run, g, gv ? gv.cname + '의 이름이 재 속에서 반짝인다' : '이름 없는 재가 흩어진다'); }
-      if (R.event === 'names' && o === 'cover') run.buffs.ashcover = 4;
-      if (R.event === 'glass' && o === 'take') { drops.push(mkItem(dropKey(run, 'r'))); n3pre(run, 'bleed', 3); }
-      if (R.event === 'buried' && o === 'dig') { p.st = Math.max(0, p.st - 50); if (Math.random() < 0.5) { run.dg.force = 'treasure'; toast('문 너머로 보물 방이 보인다'); } else { run.next3 = Object.assign(run.next3 || {}, { ambush: 1 }); toast('모래 아래에서 무언가 깨어났다. 다음 전투는 모래 매복'); } }
-      if (R.event === 'herald' && o === 'kneel') run.buffs.herald = 5;
-      if (R.event === 'herald' && o === 'draw') run.next3 = Object.assign(run.next3 || {}, { herald: 1 });
-      if (R.event === 'bonepipe' && o === 'blow') { run.dg.force = 'strong'; gainGold(run, 20, '피리 소리가 아래로 내려간다'); }
       const EO = ((EVENTS.find(x => x.id === R.event) || {}).opts || []).find(x => x.id === o) || {}; // A1: 이야기 조각 · 깨어남(확정본 1챕터 이식)
       if (EO.frag) toast('이야기 조각 — 「' + EO.frag + '」');
       const wake = EO.wake && Math.random() < EO.wake.p;
@@ -195,19 +162,18 @@ function onClick(ev) {
       const skip3 = R.event === 'smugladder' && o === 'climb' && !wake && w3LadderSkip(run); // A3 사다리: 다음 층을 건너뛴다
       if (!wake && EO.wake && EO.wake.elseGold) gainGold(run, EO.wake.elseGold, '지갑에 골드가 들어 있다');
       run.rooms.push({ room: run.room, type: 'event', event: R.event, took: o, wake: wake ? 1 : undefined });
-      if (wake) { run.cur = Object.assign({}, R, { type: 'normal', en: EO.wake.en.map(x => x.slice()), squad: null, mods: (EO.wake.mods || []).slice(), noAlarm: EO.wake.noAlarm ? 1 : undefined, tough: [], gold: 0, wake: R.event, wakeFirst: EO.wake.first ? 1 : 0, wakeWin: EO.wake.gold || EO.wake.item ? { gold: EO.wake.gold || 0, item: EO.wake.item || 0 } : null }); toast(EO.wake.msg || '무언가 깨어난다'); queueDrops(drops); saveRunLocal(); render(); break; }
+      if (wake) { run.cur = Object.assign({}, R, { type: 'normal', en: EO.wake.en.map(x => x.slice()), squad: null, mods: (EO.wake.mods || []).slice(), noAlarm: EO.wake.noAlarm ? 1 : undefined, tough: [], gold: 0, wake: R.event, wakeFirst: EO.wake.first ? 1 : 0, wakeWin: EO.wake.gold || EO.wake.item ? { gold: EO.wake.gold || 0, item: EO.wake.item || 0 } : null }); toast(EO.wake.msg || '무언가 깨어난다'); queueDrops(drops); saveRunLocal(); saveCur(); render(); break; } // 10월 24일 S-4: 깨어남은 이어 하기 자료(saveCur)에도 넣는다. 전에는 기록만 저장해 새로 고침하면 이벤트 앞에서 다시 굴릴 수 있었다
       G.evFlask = null; advanceFloor(); if (skip3) { run.rooms.push({ room: run.room, type: 'skip', took: 'ladder' }); toast('사다리 위로 한 층을 건너뛴다. 그 층의 보상은 없다'); advanceFloor(); }
       if (R.event === 'library' && o === 'read') ptBonus(run, 1, '무너진 서고');
       if (R.event === 'shiftlog' && o === 'read') ptBonus(run, 1, '수비대 교대 일지');
-      if (R.event === 'archive' && o === 'pull') ptBonus(run, 1, '불타는 서고');
       queueDrops(drops); break; }
 
     case 'giveup': { if (!ask('이 캐릭터를 포기할까요? 포기한 캐릭터는 이어 할 수 없습니다.')) break; abandonCur(); render(); toast('캐릭터를 포기했습니다'); break; }
     case 'blockback': if (G.run) G.run.blockOffered = false; G.sheet = null; render(); break;
     case 'giveupend': deadSvSave(); endRun('lose'); break; // M8: 쓰러진 직후 설문 2문항(js/70 deadSvSave)
     case 'scen': startScen(el.dataset.b); break;
-    case 'enter': enterRoom(); break;
-    case 'enterlit': { const run = G.run, R = roomDef(); if (!((run.oil || 0) > 0)) break; run.oil--; R.lit = 1; toast('등불 기름으로 방을 밝힌다. 남은 기름 ' + run.oil); enterRoom(); break; } // A2 장치 「등불」
+    case 'enter': if (G.b && !G.b.over) break; enterRoom(); break; // 10월 24일 S-5: 두 번째 누름이 전투를 새로 만들며 다음 전투에 걸린 것(중독 · 쫓아온 수도사 · 내기)을 털어 냈다
+    case 'enterlit': { const run = G.run, R = roomDef(); if (G.b && !G.b.over || !((run.oil || 0) > 0)) break; /* 10월 24일 S-5: 두 번째 누름이 기름을 하나 더 썼다 */ run.oil--; R.lit = 1; toast('등불 기름으로 방을 밝힌다. 남은 기름 ' + run.oil); enterRoom(); break; } // A2 장치 「등불」
     case 'mkbuy': { const run = G.run, R = roomDef(); if (!R || R.type !== 'market') break; const r = ch2MarketBuy(run, R, el.dataset.k, el.dataset.u); if (!r) { toast('살 수 없습니다'); break; } sfx('coin'); run.rooms.push({ room: run.room, type: 'market', took: el.dataset.k, paid: r.paid }); advanceFloor(); queueDrops(r.drops); render(); break; } // A2 암시장
     case 'smbuy': { const run = G.run, R = roomDef(); if (!R || R.type !== 'smugstall') break; const r = smugBuy(run, R, el.dataset.k); if (!r) { toast('살 수 없습니다'); break; } sfx('coin'); run.rooms.push({ room: run.room, type: 'smugstall', took: el.dataset.k, paid: r.paid }); advanceFloor(); queueDrops(r.drops); render(); break; } // A3 밀수꾼의 좌판
     case 'smleave': { const run = G.run, R = roomDef(); if (!R || R.type !== 'smugstall') break; run.rooms.push({ room: run.room, type: 'smugstall', took: null }); advanceFloor(); render(); break; }
@@ -234,7 +200,7 @@ function onClick(ev) {
     case 'stsmore': G.stsMore = !G.stsMore; render(); { const x = document.querySelector('[data-a="stsmore"]'); if (x) x.focus(); } break;
     case 'numkeys': G.data.numKeys = G.data.numKeys === false; saveLocal(); toast(G.data.numKeys ? '숫자 키로 행동합니다' : '숫자 키 행동을 껐습니다'); render(); break;
     case 'infotoggle': G.infoOn = !G.infoOn; G.data.infoOn = G.infoOn; saveLocal(); hidePop(); toast(G.infoOn ? '설명 창을 켰습니다' : '설명 창을 껐습니다'); if (G.sheet && G.sheet.kind === 'settings') render(); break;
-    case 'bcont': battleContinue(); break;
+    case 'bcont': if (!G.b) break; battleContinue(); break; // 10월 24일 S-5: 두 번째 누름은 전투가 없다
     case 'scennext': scenNext(); break;
     case 'retry': retryRoom(); break;
     case 'endrun': endRun('lose'); break;
@@ -275,6 +241,7 @@ function onClick(ev) {
     case 'choose': {
       const k = el.dataset.k; const run = G.run; const S = G.sheet;
       const offK = x => x && typeof x === 'object' ? x.uid : x, offN = x => x && typeof x === 'object' ? g8Name(x) : x; /* 0.8.0 M6-2: 상자의 새 장비는 객체 */
+      if (!S || S.kind !== 'choice' || (k && !S.data.offer.some(x => offK(x) === k))) break; /* 10월 24일 S-5: 두 번째 누름은 상자 창이 아니거나 다음 상자다(지난 상자의 장비 번호로 다음 상자를 열지 않는다) */ delete run.chestPend; // 10월 24일 S-4: 저장해 둔 상자를 닫는다
       run.choices.push({ room: S.data.room, offered: S.data.offer.map(offN), picked: k ? offN(S.data.offer.find(x => offK(x) === k)) : null, t: Date.now() }); run.declined = (run.declined || []).concat(S.data.offer.filter(x => offK(x) !== k).map(offN)); G.sheet = null;
       if (k) { const off = S.data.offer.find(x => x && typeof x === 'object' && x.uid === k); const it = off || mkItem(k); run.drops.push({ room: S.data.room, item: k, g: it.g, b: it.b, chest: 1, ch: run.ch || 1 }); giveItem(it); } else { saveRunLocal(); saveCur(); nextDrop(); }
       break;
@@ -287,7 +254,7 @@ function onClick(ev) {
     case 'codeshare': { const tb = document.getElementById('codebox'); const txt = tb ? tb.value : ''; navigator.share({ title: '나락의 유산 기록', text: txt }).then(() => toast('보냈습니다'), () => {}); break; }
     case 'codecopy': { const tb = document.getElementById('codebox'); const txt = tb ? tb.value : ''; if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(() => toast('복사했습니다. 메신저에 붙여 넣어 보내 주세요'), () => { tb.select(); toast('글자를 길게 눌러 모두 선택한 뒤 복사해 주세요'); }); else { tb.select(); try { document.execCommand('copy'); toast('복사했습니다'); } catch (e2) { toast('글자를 길게 눌러 모두 선택한 뒤 복사해 주세요'); } } break; }
     case 'import': openSheet('import', {}); break;
-    case 'impgo': { const S = G.sheet; const v = val('impbox'); if (!G.db) { S.data.msg = '공유 저장소에 연결되어야 넣습니다.'; S.data.ok = 0; render(); break; } importCode(v).then(r => { S.data.msg = (r.name || '이름 없는 지인') + '의 판 ' + r.runs + '개를 넣었습니다.'; S.data.ok = 1; render(); loadDash(); }, e2 => { S.data.msg = '넣지 못했습니다: ' + (e2 && e2.message || '알 수 없는 오류'); S.data.ok = 0; render(); }); break; }
+    case 'impgo': { const S = G.sheet; const v = val('impbox'); if (!G.db) { S.data.msg = '공유 저장소에 연결된 뒤에 넣을 수 있습니다.'; S.data.ok = 0; render(); break; } importCode(v).then(r => { S.data.msg = (r.name || '이름 없는 지인') + '의 판 ' + r.runs + '개를 넣었습니다.'; S.data.ok = 1; render(); loadDash(); }, e2 => { S.data.msg = '넣지 못했습니다: ' + (e2 && e2.message || '알 수 없는 오류'); S.data.ok = 0; render(); }); break; }
     case 'skilltog': { const S = G.sheet; const k = el.dataset.k; const v2 = G.run && isV2(G.run.p); if (v2) return; const i = S.data.pick.indexOf(k); if (i >= 0) S.data.pick.splice(i, 1); else if (S.data.pick.length < (v2 ? EQUIP_SLOTS2 : SKILL_SLOTS)) S.data.pick.push(k); else { toast('칸이 가득 찼습니다. 먼저 하나를 빼 주세요'); return; } render(); break; }
     case 'tnode': case 'tsel': case 'tzoom': case 'tlist': trdClick(a, el); break; // 10월 17일 0.8.0 3단계: 방사형 트리(js/73-tree-radial.js)
     case 'tview': G.tview = el.dataset.k === 'a' ? 'a' : 'p'; render(); break; // 10월 16일 0.8.0 2단계: 두 트리 화면(목록형, 3단계에서 방사형으로)
@@ -327,14 +294,14 @@ function onClick(ev) {
     case 'nf': G.nf = Object.assign({ b: 'all', t: 'all' }, G.nf || {}); G.nf[el.dataset.f] = el.dataset.v; render(); break;
     case 'nfm': G.nf = Object.assign({ b: 'all', t: 'all' }, G.nf || {}); G.nf.m = el.checked; render(); break;
     case 'pickblock': {
-      const k = el.dataset.k; const run = G.run; G.sheet = null;
+      const k = el.dataset.k; const run = G.run; if (!G.sheet || G.sheet.kind !== 'block') break; G.sheet = null; // 10월 24일 S-5: 두 번째 누름이 같은 장비를 하나 더 만들었다
       run.blockPicked = k || null;
       if (k) { const it = GEAR8.on && UNIQUE[k] ? mkUq(k, run.ch) : mkItem(k); if (isG8(it)) (run.uqSeen = run.uqSeen || []).push(k); run.drops.push({ room: run.room, item: k, g: it.g, b: it.b, block: 1 }); if (!addItem(run, it)) { openSheet('bagfull', { item: it, then: 'equip' }); break; } equipUid(run, it.uid, null, 'block'); saveRunLocal(); saveCur(); }
       if (G.scr === 'run' && !G.b) { enterRoom(); } else render();
       break;
     }
-    case 'dropequip': { const run = G.run; const before = growthSnapshot(run.p); const msg = equipUid(run, el.dataset.k, el.dataset.s, 'free'); G.sheet = null; saveRunLocal(); saveCur(); toast(msg || growthText(before, run.p, '장비 교체')); nextDrop(); break; }
-    case 'bfdrop': { const run = G.run; const S = G.sheet; const why=discardUid(run, el.dataset.k);if(why){toast(why);break;} const it = S.data.item, then = S.data.then; G.sheet = null; giveItem(it, then); break; }
+    case 'dropequip': { const run = G.run; if (!G.sheet || G.sheet.kind !== 'drop' || G.sheet.data.uid !== el.dataset.k || (G.b && !G.b.over)) break; /* 10월 24일 S-5: 두 번째 누름이 다음 장비 창을 닫고 넘겼다 · 전투 중에는 바꾸지 않는다 */ const before = growthSnapshot(run.p); const msg = equipUid(run, el.dataset.k, el.dataset.s, 'free'); G.sheet = null; saveRunLocal(); saveCur(); toast(msg || growthText(before, run.p, '장비 교체')); nextDrop(); break; }
+    case 'bfdrop': { const run = G.run; const S = G.sheet; if (!S || S.kind !== 'bagfull') break; /* 10월 24일 S-5 */ const why=discardUid(run, el.dataset.k);if(why){toast(why);break;} const it = S.data.item, then = S.data.then; G.sheet = null; giveItem(it, then); break; }
     case 'bfequip': {
       const run=G.run,S=G.sheet;if(!run || !S || S.kind!=='bagfull' || (G.b&&!G.b.over))break;
       const it=S.data.item,slot=el.dataset.s,why=rewardEquipWhy(run,it,slot);if(why){toast(why);break;}
@@ -343,19 +310,20 @@ function onClick(ev) {
       const before=growthSnapshot(run.p),msg=equipReward(run,it,slot);if(msg){toast(msg);break;}
       if(S.data.then==='boss' && run.settle && run.settle.loot)run.settle.loot.pending=0;delete run.gearPending;G.sheet=null;saveRunLocal();saveCur();toast(growthText(before,run.p,'장비 교체'));nextDrop();break;
     }
-    case 'bfskip': { const run = G.run; const S = G.sheet; if(!ask(itName(S.data.item)+'을(를) 두고 갈까요? 이 장비는 사라집니다.'))break; (run.discards = run.discards || []).push({ room: run.room, item: S.data.item.tpl, g: S.data.item.g, t: Date.now(), new: 1 }); if(S.data.then==='boss' && run.settle && run.settle.loot){run.settle.loot.pending=0;run.settle.loot.lost=1;} delete run.gearPending; G.sheet = null; saveRunLocal(); saveCur(); nextDrop(); break; }
+    case 'bfskip': { const run = G.run; const S = G.sheet; if (!S || S.kind !== 'bagfull' || (el.dataset.k && (S.data.item || {}).uid !== el.dataset.k)) break; /* 10월 24일 S-5: 두 번째 누름이 다음 장비(가방 가득 창)까지 버렸다. 단추에 장비 번호(js/72) */ if(!ask(itName(S.data.item)+'을(를) 두고 갈까요? 이 장비는 사라집니다.'))break; (run.discards = run.discards || []).push({ room: run.room, item: S.data.item.tpl, g: S.data.item.g, t: Date.now(), new: 1 }); if(S.data.then==='boss' && run.settle && run.settle.loot){run.settle.loot.pending=0;run.settle.loot.lost=1;} delete run.gearPending; G.sheet = null; saveRunLocal(); saveCur(); nextDrop(); break; }
     case 'eqsel': {const it=G.run.inv[G.run.eqU[el.dataset.k]];if(it){it.fresh=false;saveRunLocal();saveCur();}} G.eqSel = { slot: el.dataset.k }; G.eqFilter='slot'; render(); eqReveal(); break;
     case 'eqpick': { const u = el.dataset.k,it=G.run.inv[u];if(!it)break;it.fresh=false;saveRunLocal();saveCur();const kind=tplKind(it.tpl),prev=(G.eqSel||{}).slot,slot=kind==='ring'?(kindOf(prev)==='ring'?prev:'ring1'):kind; G.eqSel = G.eqSel && G.eqSel.uid === u ? { slot } : { slot, uid: u }; render(); eqReveal(); break; }
-    case 'eqon': { const run = G.run; const before = growthSnapshot(run.p); const msg = equipUid(run, el.dataset.k, el.dataset.s, 'free'); if (!msg) { G.eqSel = { slot: el.dataset.s }; saveRunLocal(); saveCur(); toast(growthText(before, run.p, '장비 교체')); } else toast(msg); render(); if(!msg)eqBagReveal(); break; }
-    case 'eqoff': { const run = G.run; const msg = unequipUid(run, el.dataset.k, 'free'); if (!msg) { saveRunLocal(); saveCur(); toast('가방에 넣었습니다'); } else toast(msg); render(); break; }
-    case 'eqdrop': { const run = G.run; const it = run.inv[el.dataset.k]; if(itemRemoveWhy(run,it&&it.uid)){toast(itemRemoveWhy(run,it.uid));break;} if (!it || !ask(itName(it) + '을(를) 버릴까요? 버린 장비는 사라집니다.')) break; discardUid(run, it.uid); G.eqSel = { slot: (G.eqSel || {}).slot || 'weapon' }; saveRunLocal(); saveCur(); toast('버렸습니다'); render(); break; }
-    case 'dropkeep': G.sheet = null; nextDrop(); break;
-    case 'droporganize': G.sheet=null;nextDrop();if(!G.sheet){G.eqSel=null;G.eqFilter='all';openSheet('equip');eqBagReveal();}break;
+    case 'eqon': { const run = G.run; if (G.b && !G.b.over) { toast('전투 중에는 바꿀 수 없습니다'); break; } /* 10월 24일 S-5: 장비 창은 전투 중 보기만(js/64)인데 단추 처리는 막지 않았다 */ const before = growthSnapshot(run.p); const msg = equipUid(run, el.dataset.k, el.dataset.s, 'free'); if (!msg) { G.eqSel = { slot: el.dataset.s }; saveRunLocal(); saveCur(); toast(growthText(before, run.p, '장비 교체')); } else toast(msg); render(); if(!msg)eqBagReveal(); break; }
+    case 'eqoff': { const run = G.run; if (G.b && !G.b.over) { toast('전투 중에는 바꿀 수 없습니다'); break; } const msg = unequipUid(run, el.dataset.k, 'free'); if (!msg) { saveRunLocal(); saveCur(); toast('가방에 넣었습니다'); } else toast(msg); render(); break; }
+    case 'eqdrop': { const run = G.run; if (G.b && !G.b.over) { toast('전투 중에는 바꿀 수 없습니다'); break; } const it = run.inv[el.dataset.k]; if(itemRemoveWhy(run,it&&it.uid)){toast(itemRemoveWhy(run,it.uid));break;} if (!it || !ask(itName(it) + '을(를) 버릴까요? 버린 장비는 사라집니다.')) break; discardUid(run, it.uid); G.eqSel = { slot: (G.eqSel || {}).slot || 'weapon' }; saveRunLocal(); saveCur(); toast('버렸습니다'); render(); break; }
+    case 'dropkeep': if (!G.sheet || G.sheet.kind !== 'drop' || (el.dataset.k && G.sheet.data.uid !== el.dataset.k)) break; G.sheet = null; nextDrop(); break; // 10월 24일 S-5: 두 번째 누름이 다음 장비 창을 닫고 넘겼다
+    case 'droporganize': if (!G.sheet || G.sheet.kind !== 'drop') break; G.sheet=null;nextDrop();if(!G.sheet){G.eqSel=null;G.eqFilter='all';openSheet('equip');eqBagReveal();}break;
     case 'dropdiscard': { const run = G.run; const it = run.inv[el.dataset.k]; if(itemRemoveWhy(run,it&&it.uid)){toast(itemRemoveWhy(run,it.uid));break;} if (!it || !ask(itName(it) + '을(를) 버릴까요? 버린 장비는 사라집니다.')) break; discardUid(run, it.uid); G.sheet = null; saveRunLocal(); saveCur(); toast('버렸습니다'); nextDrop(); break; }
   }
 }
 function onKey(ev) {
   if(ev.key==='Enter' && ev.target && ev.target.id==='consquery'){ev.preventDefault();const btn=document.querySelector('[data-a=conssearch]');if(btn)btn.click();return;}
+  if (G.tabStale) { if (ev.key === 'Tab' && G.sheet) sheetTrap(ev); return; } // 10월 24일 S-4: 낡은 탭은 숫자 키 행동도 받지 않는다
   if (G.hudEd && hudEdKey(ev)) return;
   if (ev.key === 'Tab' && G.sheet) sheetTrap(ev);
   const typing = ev.target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(ev.target.tagName);

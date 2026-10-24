@@ -172,10 +172,10 @@ function previewText(b, time) {
   for (const x of L) {
     const k = x.e.intent && x.e.intent.k;
     if (k === 'heavy') warn.push(x.e.n + '의 강타');
-    else if (k === 'charge' && x.n >= 2) warn.push(x.e.n + '의 강타(충전 후 이어서)');
+    else if (k === 'charge' && x.n >= 2) warn.push(x.e.n + '의 강타(모은 뒤 이어서)');
     else if (k === 'explode') warn.push(x.e.n + '의 폭발');
     else if (k === 'burn') warn.push(x.e.n + '의 화형');
-    else if (k === 'fuse' && x.n >= 2) warn.push(x.e.n + '의 폭발(준비 후 이어서)');
+    else if (k === 'fuse' && x.n >= 2) warn.push(x.e.n + '의 폭발(준비한 뒤 이어서)');
     else if (k === 'heal') warn.push(x.e.n + '의 치유');
     else if (k === 'mirror') warn.push('나락의 거울');
   }
@@ -207,6 +207,8 @@ function stsHtml(u, b, inCard, opt) {
     if (u.exhaust) out.push('<i class="d" data-info="exhaust" tabindex="0">탈진</i>');
     if (u.ward > 0) out.push(`<i class="b" data-info="ward" tabindex="0">보호막 <b>${Math.round(u.ward)}</b>${u === (b && b.p) && isV2(u) ? '<small>/' + wardMax(u) + '</small>' : ''}</i>`);
     if (u.thorn) out.push(u.thorn.bleed && !u.thorn.dmg ? `<i class="b" data-info="buthorn" tabindex="0">맞으면 출혈 ${u.thorn.bleed}<small> · ${u.thorn.n}번</small></i>` : `<i class="b" data-info="thorn" tabindex="0">가시 <b>${u.thorn.n}</b><small>·${u.thorn.dmg}</small></i>`);
+    if (u.sbSt && u.sbSt.hold > 0) out.push(`<i class="b" data-info="sbhold" tabindex="0">버팀 <b>${u.sbSt.hold}</b></i>`); // 마검사 버팀(주는 피해 덤). 전에는 칩이 없었다
+    if (u.evade > 0) out.push(`<i class="b" data-info="pevade" tabindex="0">${u.build === 'hunter' ? '몸 빼기' : '피하기'} <b>${u.evade}</b></i>`); // 남은 피하기 횟수(사냥꾼 몸 빼기 · 연막 등). 전에는 칩이 없어 전투 기록으로만 알았다
     if (isBu(u)) { const th = buThirst(u), gn = buGrudgeNow(b); // 숨겨진 직업 1
       if (th > 0) out.push(`<i class="b" data-info="buthirst" tabindex="0"><span class="sic" aria-hidden="true">🩸</span>갈증 +${Math.round(th * 100)}%</i>`);
       if (gn > 0) out.push(`<i class="b" data-info="bugrudge" tabindex="0">받은 피해 <b>${Math.round(gn)}</b></i>`);
@@ -263,8 +265,8 @@ function eordHtml(b, e) {
   return L.length ? `<span class="eord${L[0] === 1 ? ' soon' : ''}" data-info="eord">${L.join('·')}번째</span>` : '<span class="eord done" data-info="eord">✓ 다음 라운드</span>';
 }
 /* 적 생명력: 굵은 막대 + 큰 숫자. 30% 아래면 붉게 */
-/* A0 갑옷 · 방패 칩: 생명력 막대 옆. 둘 다 0이면 아무것도 그리지 않는다 */
-function foeASHtml(b, e) { foeAS(b, e); const ex = fcChip(b, e) /* G-1 강적 시계 */ + (isCh2(b) ? ch2CardChips(b, e) : '') + (isW3(b) ? w3CardChips(b, e) : '') + (e.praying ? '<span class="fpray" data-info="chdev">🙏 기도</span>' : '') + (e.fillMax > 0 ? `<span class="ffill" aria-label="배 채움 ${Math.round(e.fill || 0)}/${e.fillMax}">🍞<b>${Math.round(e.fill || 0)}/${e.fillMax}</b></span>` : '') + (e.barrier > 0 ? `<span class="fbar" aria-label="보호막 ${Math.round(e.barrier)}">🔰<b>${Math.round(e.barrier)}</b></span>` : ''); if (!(e.armor > 0) && !(e.shieldMax > 0)) return ex ? `<span class="foeas">${ex}</span>` : ''; return `<span class="foeas">${ex}${e.armor > 0 ? `<span class="farm${e.armorOff ? ' off' : ''}" data-info="farmor" aria-label="갑옷 ${e.armorOff ? '벗겨짐' : e.armor}">🪖<b>${e.armorOff ? '–' : e.armor}</b></span>` : ''}${e.shieldMax > 0 ? `<span class="fshd" data-info="fshield" aria-label="방패 ${e.shield}/${e.shieldMax}겹">${'<i class="on"></i>'.repeat(e.shield)}${'<i></i>'.repeat(Math.max(0, e.shieldMax - e.shield))}</span>` : ''}</span>`; }
+/* A0 갑옷 · 방패 칩: 생명력 막대 옆. 둘 다 0이면 아무것도 그리지 않는다. 10월 24일 S-4: 방패 칸 앞에 🛡 (칸만 있으면 시계 칸과 색으로만 갈렸다) */
+function foeASHtml(b, e) { foeAS(b, e); const ex = fcChip(b, e) /* G-1 강적 시계 */ + (isCh2(b) ? ch2CardChips(b, e) : '') + (isW3(b) ? w3CardChips(b, e) : '') + (e.praying ? '<span class="fpray" data-info="chdev">🙏 기도</span>' : '') + (e.fillMax > 0 ? `<span class="ffill" aria-label="배 채움 ${Math.round(e.fill || 0)}/${e.fillMax}">🍞<b>${Math.round(e.fill || 0)}/${e.fillMax}</b></span>` : '') + (e.barrier > 0 ? `<span class="fbar" aria-label="보호막 ${Math.round(e.barrier)}">🔰<b>${Math.round(e.barrier)}</b></span>` : ''); if (!(e.armor > 0) && !(e.shieldMax > 0)) return ex ? `<span class="foeas">${ex}</span>` : ''; return `<span class="foeas">${ex}${e.armor > 0 ? `<span class="farm${e.armorOff ? ' off' : ''}" data-info="farmor" aria-label="갑옷 ${e.armorOff ? '벗겨짐' : e.armor}">🪖<b>${e.armorOff ? '–' : e.armor}</b></span>` : ''}${e.shieldMax > 0 ? `<span class="fshd" data-info="fshield" aria-label="방패 ${e.shield}/${e.shieldMax}겹"><span class="fshi" aria-hidden="true">🛡️</span>${'<i class="on"></i>'.repeat(e.shield)}${'<i></i>'.repeat(Math.max(0, e.shieldMax - e.shield))}</span>` : ''}</span>`; }
 function ehpBar(e) { if (e.role === 'lantern') return ''; /* A2 등불은 생명력 대신 붕괴로 깨진다 */ const r = e.hpMax > 0 ? Math.max(0, Math.min(1, e.hp / e.hpMax)) : 0; return `<span class="bar hp ehp${r <= 0.3 ? ' lo' : ''}" role="progressbar" aria-label="생명력" aria-valuemin="0" aria-valuemax="${Math.round(e.hpMax)}" aria-valuenow="${shownHp(e.hp)}"><i style="width:${r * 100}%"></i><span><b>${shownHp(e.hp)}</b> / ${Math.round(e.hpMax)}</span></span>`; }
 /* 이번 차례에 남은 칸: ⚡ 빠른 행동(먼저) + ▶ 주 행동(차례를 끝냄) */
 function slotHtml(b) {

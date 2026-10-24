@@ -466,11 +466,20 @@ function skScore(s) { const E = skValue(s) * (SKK.brAdj[s.b] || 1) * ((SKK.clsAd
 
 /* 설명 문장. 키워드(중독, 붕괴, 터뜨리기, 흘리기)의 뜻은 설명창의 키워드 칸이 맡고, 스킬 문장은 숫자만 말한다 */
 /* 쿨타임: 쓰고 나면 cd만큼 내 턴을 기다린다(내 턴이 끝날 때마다 1 준다). 갈래 규칙(TREE2.haste)은 10월 3일에 없앴다: 아래 SK_HS는 다시 쓸 때를 위해 남긴다 */
-const SK_HS = { poison: '독을 걸면', kill: '적을 쓰러뜨리면', parry: '흘려 내면', break: '정예 이상을 무너뜨리면' };
+const SK_HS = { poison: '독을 걸면', kill: '적을 쓰러뜨리면', parry: '흘려 내면', break: '정예 · 강적 · 보스를 무너뜨리면' };
 const SK_HSL = { poison: '독을 건 행동마다', kill: '적을 쓰러뜨린 행동마다', parry: '흘리기에 성공할 때마다', break: '정예 · 강적 · 보스를 무너뜨린 행동마다' };
 for (const k in TREE2) for (const x of (SKILLS2[k] || [])) x.hs = (TREE2[k].haste || {})[x.b] || null; // 스킬마다 갈래 규칙을 붙여 둔다
 /* 10월 15일 유산 1차 시제품: 스킬 비용은 데이터의 cd에서 기계적으로 만든다(설계안 4-1). 시작 스킬과 cd 3–5 → 2, 6–8 → 3, 9–10과 전투마다 1번 → 4. cd는 다른 도구가 읽으므로 데이터에 남긴다 */
 function skCost(s) { if (!s) return 0; if (s.ys != null) return s.ys; if (s.once) return 4; return 2; } // 0.8.0 M5-0(10월 19일): 비용은 트리 노드의 ys(skOf가 넣음)만 읽는다. 쿨타임 변환표 · cheap 분기는 없앴다. 노드 밖(시작 스킬 등)은 2, 전투마다 1번은 4. 트리 스킬의 ys 누락은 tree-check 오류
+/* S-2 · S-3(10월 24일 만든 사람): 유산 1짜리 스킬이 생명력 회복 · 보호 · 보호막 · 회피(몸 빼기)를 주면 다음 내 차례 시작의 유산 충전이 없다(차례 충전 +1과 맞물려 매 차례 공짜인 영구 상태 막기). 대응 · 다른 충전은 그대로.
+   효과: 회복(wdPray · mkDrainChill · drain, 내 출혈을 지우는 me는 빼고) · 보호막(ward · wardPer · wardFill · sbSinWall) · 보호(나에게 거는 protect · elProtR) · 회피(evade).
+   비용: S-5(10월 24일 만든 사람) 실제로 낸 비용(skCostAt)이 1 이하면 모두. 변형 조건 · 장비 · 접사 · 고유 · 첫 스킬 · 교대 할인도 넣는다. 태세 끄기(wdOff) · 돌아선 방패의 태세 바꾸기(wdTurn)는 새 보호가 아니라 켜고 끄기라 뺀다(js/22 ysSpend).
+   설명 끝: 비용 1 이하 칸(ysHealSk)은 "쓰면 …", 비용 2 이상이라 할인으로 1이 될 수 있는 칸(ysCondSk)은 "비용 1로 쓰면 …" */
+const YS_HEAL_K = ['wdPray', 'mkDrainChill'], YS_GUARD_K = ['ward', 'wardPer', 'wardFill', 'sbSinWall', 'evade', 'elProtR'];
+const ysGuardFx = s => !!(s && s.fx) && s.fx.some(e => YS_HEAL_K.includes(e.k) || YS_GUARD_K.includes(e.k) || (e.k === 'drain' && !e.me) || (e.k === 'meSt' && e.s === 'protect') || (e.k === 'st' && e.s === 'protect' && s.tgt === 'self'));
+const ysHealSk = s => ysGuardFx(s) && skCost(s) + (s.ysUp || 0) <= 1; /* ysUp: 고유가 올린 비용(js/23 skOf) */ // 이름은 S-2 그대로(S-3에서 보호 · 회피까지 넓힘)
+const ysCondSk = s => ysGuardFx(s) && skCost(s) + (s.ysUp || 0) > 1 && (s.cond || []).length > 0; // 설명 끝 "비용 1로 쓰면 …"은 변형 조건 할인 칸에만(S-5 만든 사람 결정 10월 24일: 장비 · 접사 할인은 쓸 때 전투 버튼 · 설명 창에서 알린다. 규칙 자체는 js/22 ysSpend가 실제로 낸 비용으로 본다)
+const skYsTail = s => ysHealSk(s) ? ' 쓰면 다음 차례 유산 충전 없음.' : ysCondSk(s) ? ' 비용 1로 쓰면 다음 차례 유산 충전 없음.' : '';
 function skCd(s) { return '유산 ' + skCost(s) + (s.once ? ' · 전투마다 1번' : ''); }
 const skCharge = skCd; // 옛 이름
 const skHz = s => !!(s && s.fx && s.fx.some(e => e.k === 'hasten')); // 🔄 표시를 붙일 스킬
@@ -571,7 +580,7 @@ function skBodyMk(s) {
     case 'evadeCtr': P.push((e.rounds ? e.rounds + '라운드 ' : '') + '피하면 반격 사격 ' + e.dmg + (e.focus ? '(추적 +' + e.focus + '겹)' : '')); break;
     case 'chillCut': P.push('둔화된 채 모으는 적의 공격을 끊음'); break;
     case 'freeze': P.push('대상이 다음 행동을 놓침'); break;
-    case 'foresee': P.push(e.rounds + '라운드 큰 공격 피해 −' + Math.round(e.red * 100) + '%'); break;
+    case 'foresee': P.push(e.rounds + '라운드 큰 공격(강타 · 겨눈 한 발 · 화형) 피해 −' + Math.round(e.red * 100) + '%'); break;
     case 'bbuf': P.push(((e.r || 0) + 1) + '라운드 기본 공격에 ' + (e.s === 'barb' ? '출혈 ' + e.bleed : e.s)); break;
     case 'hnTrap': P.push(e.txt.replace(/\.$/, '') + (e.mul ? ' · 걸린 적에게 무기 피해의 ' + e.mul + '배' : '')); break;
     case 'kiHits': P.push(e.max === 1 ? '기가 있으면 +1타' : '기 1마다 1타 추가(최대 ' + e.max + ')'); break;
@@ -600,7 +609,7 @@ function skBodyMk(s) {
     case 'thorn': P.push('맞을 때마다 때린 적에게 피해 ' + e.dmg + ' · ' + e.times + '번'); break;
     case 'kwx': P.push(skKw(s, e.s) + ' 걸린 적에게 ×' + e.mul); break;
     case 'ward': P.push('보호막 +' + e.n); break;
-    case 'bigx': P.push('큰 적에게 ×' + e.mul); break;
+    case 'bigx': P.push('정예 · 강적 · 보스에게 ×' + e.mul); break;
     case 'stance': { const L = ['자세'];
       if (e.red) L.push('받는 피해 −' + Math.round(e.red * 100) + '%'); if (e.dmg) L.push('되받기 +' + e.dmg); if (e.mul) L.push('되받기 ×' + (1 + e.mul)); if (e.max) L.push(e.max + '번까지'); if (e.keep) L.push(e.keep + '차례 유지');
       if (e.big) L.push('강타를 되받으면 무너뜨림'); if (e.far) L.push('후열도 되받음'); if (e.ki) L.push('되받으면 기 +' + e.ki); if (e.brk) L.push('되받기 붕괴 +' + e.brk); if (e.chill) L.push('되받은 적 둔화 ' + e.chill);
@@ -610,7 +619,7 @@ function skBodyMk(s) {
   return P.join(' · ') + '.';
 }
 function skBody(s) {
-  if (s.mk5 || s.as5 || s.hn5 || s.el5) return skBodyMk(s) + (s.pay ? ' 대가: ' + s.pay : ''); // M5-2 수도승 · M5-3 암살자 한 줄 설명
+  if (s.mk5 || s.as5 || s.hn5 || s.el5) return skBodyMk(s) + skYsTail(s) + (s.pay ? ' 대가: ' + s.pay : ''); // M5-2 수도승 · M5-3 암살자 한 줄 설명
   const out = []; const hits = s.hits || 1; const parts = []; const first = []; const burnWard = s.fx.some(e => e.k === 'wardBurn'); const isE = String(s.id).slice(0, 2) === 'e_'; // first: 연타의 첫 타격에만 거는 상태 (마검사 연타 칸)
   const eMulti = isE && hits > 1 && s.fx.some(e => e.k === 'st'); // 원소술사 여러 번 쏘기: 상태는 첫 발 뒤에 걸려 다음 발부터 쓴다 (엔진 그대로, 문장만)
   const cf = String(s.id).slice(0, 2) === 'c_'; if (cf) out.push(...skBodyConfPre(s)); // 숨겨진 직업 2: 옮기기 · 벗기기 · 정화 · 사함은 피해보다 먼저
@@ -624,7 +633,7 @@ function skBody(s) {
     if (bu && e.k === 'drain' && e.s === 'bleed' && e.me) out.push('먼저 내 출혈을 모두 지운다. ' + (e.dmg ? `지운 출혈 1마다 이 스킬의 피해 +${e.dmg}(${e.max || 10}까지 센다).` : `지운 출혈 1마다 나에게 강화 ${e.emp || 1}(최대 4).`));
   }
   for (const e of s.fx) {
-    if (e.k === 'dmg') parts.push(s.id==='tut_bash' ? `피해 ${e.n}` : `기준 피해 ${e.n}(${skillGrowthStat(s)==='int'?'지능':skillGrowthStat(s)==='dex'?'민첩·무기':'힘·무기'}로 성장)`);
+    if (e.k === 'dmg') parts.push(s.id==='tut_bash' ? `피해 ${e.n}` : `기준 피해 ${e.n}(${skillGrowthStat(s)==='int'?'지능으로':skillGrowthStat(s)==='dex'?'민첩·무기로':'힘·무기로'} 성장)`);
     if (e.k === 'poison') parts.push(`중독 ${e.n}`);
     if (e.k === 'brk') parts.push(`붕괴 +${e.n}`);
     if (e.k === 'st' && !eMulti) { const t = `${s.tgt === 'self' ? '나에게 ' : ''}${skKw(s, e.s)} ${e.n}`; if (bu && ((eatT && e.s === 'bleed') || hits > 1)) late.push(e); else (s.kind && hits > 1 && s.tgt !== 'self' ? first : parts).push(t); }
@@ -639,7 +648,7 @@ function skBody(s) {
     if (bu) { const t = skBodyBu(s, e, late); if (t !== null) { if (t) out.push(t); continue; } }
     if (cf) { const t = skBodyConf(s, e); if (t !== null) { if (t) out.push(t); continue; } }
     if (bm) { const t = skBodyBm(s, e); if (t !== null) { if (t) out.push(t); continue; } }
-    if (SB_BD_K.includes(e.k) || (e.k === 'imbue' && (e.txt || (!e.also && s.fx.some(x => x.k === 'imbue' && x.also && x.txt))))) { if (e.txt) out.push(e.txt); continue; } // 0.8.0 M5-0 마검사 경계: 만든 사람 문장 그대로(txt)
+    if (SB_BD_K.includes(e.k) || WD_K.includes(e.k) || (e.k === 'imbue' && (e.txt || (!e.also && s.fx.some(x => x.k === 'imbue' && x.also && x.txt))))) { if (e.txt) out.push(e.txt); continue; } // 0.8.0 M5-0 마검사 경계 · M5-1 파수꾼(WD_K): 만든 사람 문장 그대로(txt). 파수꾼 칸은 전에 이 길에 없어 태세 · 기도 · 승부수 효과 문장이 비어 보였다
     switch (e.k) {
       case 'grow': out.push(`대상의 중독을 ${e.mul}배로 만든다.` + (e.add ? ` 그 뒤 중독 ${e.add}.` : '')); break;
       case 'burst':
@@ -669,7 +678,7 @@ function skBody(s) {
       case 'focusBurst': out.push(`대상의 추적을 모두 터뜨린다. 1겹마다 기준 추가 피해 ${e.n}(민첩 1점마다 ${FOCUS_STAT_PCT}% 증가). 추적은 사라진다.`); break;
       case 'focusAdd': out.push(`대상에게 추적 +${e.n}겹. 이 효과로는 2겹까지만 쌓이고, 3겹째는 같은 적을 다시 맞혀야 쌓인다.`); break;
       case 'swapx': out.push(`직전에 친 적과 다른 적이면 피해 ×${e.mul}.`); break;
-      case 'evade': out.push(`다음에 맞는 공격 ${e.n}번을 피한다. 화형과 상태 피해는 피할 수 없다.`); break;
+      case 'evade': out.push(`다음에 맞는 공격 ${e.n}번을 피한다. 광역 · 화형 · 상태 피해는 피할 수 없다.`); break;
       case 'evadeCtr': out.push((e.charged ? '피한 공격이 강타나 겨눈 한 발이면' : (e.rounds ? e.rounds + '라운드 동안 ' : '') + '공격을 피할 때마다') + ` 그 적에게 반격 사격을 한다(피해 ${e.dmg}${e.chill ? ', 둔화 ' + e.chill : ''}).`); break;
       case 'quick': out.push('이번 차례에 빠른 칸 +1.'); break;
       case 'chillCut': out.push(`대상이 둔화된 채 강타 · 영창 · 겨누기를 모으는 중이면 그 공격을 끊는다. 강적 · 보스는 끊기지 않고 붕괴 +${e.brk}.`); break;
@@ -707,9 +716,9 @@ function skBody(s) {
       case 'spread': out.push(`대상의 중독${e.per === 1 ? '' : e.per === 0.5 ? ' 절반(올림)' : ' ' + Math.round(e.per * 100) + '%'}만큼 다른 적 모두에게 중독을 건다. 대상의 중독은 그대로다.`); break;
       case 'capOver': out.push(`이 스킬로 거는 중독은 상한을 넘어 ${e.cap}까지 쌓인다.`); break;
       case 'wardFill': out.push(e.to && e.to < 1 ? `보호막을 상한의 ${Math.round(e.to * 100)}%까지 채운다. 이미 그만큼 있으면 늘지 않는다.` : '보호막을 상한까지 채운다.'); break;
-      case 'wardFirst': out.push(`먼저 보호막 ${e.n}${e.protect ? ' · 보호 ' + e.protect : ''}을(를) 두른다.`); break; // 10월 17일 보완 5 갑주 해방
+      case 'wardFirst': out.push(`먼저 보호막 ${e.n}${e.protect ? ' · 보호 ' + e.protect : ''}${skJo(e.protect || e.n)} 두른다.`); break; // 10월 17일 보완 5 갑주 해방
       case 'wardBurn': { const wd = (s.kind || String(s.id).slice(0, 2) === 'w_') && s.fx.find(x => x.k === 'ward'); out.push(`보호막을 ${e.max ? '최대 ' + e.max + '까지' : '모두'} 태운다. 태운 보호막 1마다 ${s.tgt === 'front' ? '전열 모두에게 ' : s.tgt === 'all' ? '모든 적에게 ' : ''}피해 ${e.mul}. 보호막이 없으면 ${s.fx.some(x => x.k === 'dmg') ? '더하는 피해는' : '이 피해는'} 0이다.` + (wd ? ` 태운 뒤 나에게 보호막 +${wd.n}.` : '')); break; }
-      case 'wardDmg': out.push(e.drainAll ? `현재 보호막을 전부 소모합니다. 추가 피해 = 소모한 보호막 × ${e.per}(최대 ${e.cap}). 이 행동에서는 교대 보호막을 얻지 않습니다.` : e.spend ? `현재 보호막의 ${e.spend * 100}%를 소모합니다(최대 ${e.cap / e.per}). 추가 피해 = 소모한 보호막 × ${e.per}(최대 ${e.cap}).` : `${e.per >= 1 ? '내 보호막 1마다 피해 +' + e.per : '내 보호막 ' + Math.round(1 / e.per) + '마다 피해 +1'}${e.cap != null ? '(최대 ' + e.cap + ')' : ''}. 보호막은 줄지 않습니다.`); break;
+      case 'wardDmg': out.push(e.drainAll ? `현재 보호막을 모두 소모한다. 추가 피해 = 소모한 보호막 × ${e.per}(최대 ${e.cap}). 이 행동에서는 교대 보호막을 얻지 않는다.` : e.spend ? `현재 보호막의 ${e.spend * 100}%를 소모한다(최대 ${e.cap / e.per}). 추가 피해 = 소모한 보호막 × ${e.per}(최대 ${e.cap}).` : `${e.per >= 1 ? '내 보호막 1마다 피해 +' + e.per : '내 보호막 ' + Math.round(1 / e.per) + '마다 피해 +1'}${e.cap != null ? '(최대 ' + e.cap + ')' : ''}. 보호막은 줄지 않는다.`); break;
       case 'thorn': out.push(`가시 ${e.times}번을 얻는다. 맞을 때마다 때린 적에게 피해 ${e.dmg}. 이미 있으면 횟수를 더한다(최대 8번).`); break;
       case 'vulnPer': out.push(`대상의 취약 1마다 피해 +${e.per}. 취약은 줄지 않는다.`); break;
       case 'shieldx': out.push(`방패병에게는 붕괴 ×${e.mul}.`); break;
@@ -727,7 +736,7 @@ function skBody(s) {
   if (bu && (s.tgt === 'ranged' || s.tgt === 'all') && s.fx.some(e => e.k === 'dmg')) out.push((s.tgt === 'all' ? '후열에도 닿는다. ' : '') + '근접 공격이 아니라 흡혈은 일어나지 않는다.');
   if (s.fx.some(e => skillResourceGrows(s, e) && e.k !== 'focusBurst')) out.push((/^m_/.test(s.id) ? '이 기 추가 피해' : '이 자원 추가 피해') + '는 힘 1점마다 기준값의 1%씩 증가한다.');
   if (s.pay) out.push('대가: ' + s.pay); // M5-0a 승부수: 대가는 따로 적어 두고(설명란은 skDescHtml이 줄을 나눈다), 글 설명에서는 끝에 붙인다
-  return out.join(' ').replace(/\s+/g, ' ').trim();
+  return (out.join(' ') + skYsTail(s)).replace(/\s+/g, ' ').trim(); // S-2: 유산 1 회복 칸은 끝에 충전 없음
 }
 /* M5-0a(10월 20일 만든 사람): 대사가 있는 스킬(승부수)의 설명란. 대사는 맨 위 따로 한 칸(명조 가운데 인용, 「」는 부채꼴 색 장식 · 위에 ✦ 가는 선, 같은 날 만든 사람 고름), 그 아래 효과 / 대가 / 대상을 줄로 나눈다.
    대가는 색과 "대가" 글자로 구분(색만으로 구분하지 않음). 스크린리더는 "대사: …, 효과: …, 대가: …, 대상: …" 순서. 대사가 없으면 빈 문자열(부른 쪽이 원래 설명을 쓴다) */

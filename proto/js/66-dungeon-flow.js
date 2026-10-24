@@ -33,10 +33,11 @@ function genSeg(run, si, path) {
   } finally { run.dg = JSON.parse(d0); run.path = p0; }
   return out;
 }
-/* 미리 만든 구간의 문(없으면 그 자리에서 만든다). 구간 안에서 생긴 강제 문(종탑의 줄 · 묻힌 문 등)은 그 층의 일반 문 하나를 바꿔 넣는다 */
+/* 미리 만든 구간의 문(없으면 그 자리에서 만든다). 구간 안에서 생긴 강제 문(종탑의 줄 · 무너진 망루 · 다락의 아이들 등)은 그 층의 일반 문 하나를 바꿔 넣는다 */
 function segDoorsAt(run, f) {
   const s = run.segDoors && run.segDoors[f]; if (!s) return genDoors(run, f);
   const d = run.dg; let ds = s.slice(); if (d.force && !ds.some(r => r.type === d.force)) { const k = ds.findIndex(r => r.type === 'normal'); ds[k >= 0 ? k : ds.length - 1] = mkRoom(run, d.force, f); } d.force = null;
+  { const k = ds.findIndex(r => r.type === 'event' && d.events.includes(r.event)); if (k >= 0) ds[k] = mkRoom(run, typeOk(run, 'event', f) ? 'event' : 'normal', f); } // 10월 24일 S-5: 구간은 미리 만들어 같은 이벤트가 두 층에 나올 수 있었다(구간의 1.8%). 앞 층에서 고른 이벤트면 이 문만 새로 만든다
   return ds;
 }
 function typeOk(run, t, f) {
@@ -66,7 +67,7 @@ function genDoors(run, f) {
   if (f === 1) types = ['normal', 'normal', typeOk(run, 'treasure', f) && Math.random() < 0.5 ? 'treasure' : 'shrine'];
   else if (f === FLOOR_CAMP + 1) { types = ['normal']; const t2 = pickType(run, f, types, ['ambush', 'strong']); if (t2) types.push(t2); const t3 = pickType(run, f, types, RESTS); if (t3) types.push(t3); }
   else {
-    if (d.force) { need(d.force); d.force = null; } // 종탑의 줄 · 뼈 피리 · 해를 앞당긴다(강적), 묻힌 문(보물)
+    if (d.force) { need(d.force); d.force = null; } // 종탑의 줄 · 무너진 망루(강적), 다락의 아이들(성소). 10월 24일 S-4: 옛 2 · 3챕터 이벤트(뼈 피리 · 해시계 · 묻힌 문)는 뺐다
     // 0.8.0 6단계: "반쯤 왔는데 강적을 못 봤으면"은 구간마다 강적 층을 보장하는 genSeg가 맡는다
   }
   while (types.length < 3) { const t = pickType(run, f, types); if (!t) break; types.push(t); }
@@ -201,13 +202,13 @@ function dropKey(run, g, not) { if (GEAR8.on) return 'g8|' + g; /* 0.8.0 M6-2: �
 }
 /* 챕터 보스를 이기면 장비 하나 (표가 있는 챕터만, 정산 화면에 보인다) */
 function bossLoot(run) { if (!DROP_G[run.ch || 1]) return null; const it = GEAR8.on ? g8Gen(run, { where: 'boss', g: g8Grade(run.ch, 'boss') }) : mkItem(dropKey(run, rollGradeCh(run.ch, 'boss'))); if (!isG8(it)) it.g = ITEMS[it.tpl].g || 'n'; /* 0.8.0 M6-2: 보스는 무기 · 갑옷 가중, 희귀 이상(3챕터 영웅) */ if (!addItem(run, it)) { run.gearPending = { item: it, then: 'boss' }; return { tpl: it.tpl, g: it.g, pending: 1 }; } run.drops.push({ room: run.room, item: it.tpl, g: it.g, b: it.b, boss: 1, ch: run.ch || 1 }); return { tpl: it.tpl, g: it.g }; }
-function queueDrops(list) { G.dropQ = (G.dropQ || []).concat(list); nextDrop(); }
+function queueDrops(list) { G.dropQ = (G.dropQ || []).concat(list); if (G.run) G.run.dropQ = G.dropQ; nextDrop(); } // 10월 24일 S-4: 건넬 전리품 줄은 판(run.dropQ)에 같이 저장한다. 창이 떠 있을 때 새로 고침해도 남은 전리품이 사라지거나 다시 굴려지지 않는다
 function nextDrop() {
   const run = G.run; if (run && run.gearPending) { openSheet('bagfull', run.gearPending); return; } if (G.winSumShown) { G.winSum = null; G.winSumShown = false; }
   if (run && (run.consPending || []).length) { saveRunLocal(); saveCur(); openSheet('consfull'); return; }
   if (run && run.patrolPend && (!G.dropQ || !G.dropQ.length) && !G.b) { saveRunLocal(); saveCur(); openSheet('patrol', {}); return; } // 0.8.0 6단계 A-6: 전리품을 다 건넨 뒤 순찰대 보상 고르기
   if (!run || !G.dropQ || !G.dropQ.length) { G.winSum = null; render(); if (run) ksOpen(); return; } // 10월 16일 0.8.0 2단계: 3챕터 야영지에 들어서며 받은 큰 각인
-  const it = G.dropQ.shift(); if (it.chest) { openSheet('choice', { offer: it.chest, room: it.room, chest: 1 }); if (G.winSum) G.winSumShown = true; return; } run.drops.push({ room: run.room, item: it.tpl, g: it.g, b: it.b, ch: run.ch || 1 }); giveItem(it); if (G.winSum) G.winSumShown = true;
+  const it = G.dropQ.shift(); if (it.chest) { run.chestPend = it; saveRunLocal(); saveCur(); openSheet('choice', { offer: it.chest, room: it.room, chest: 1 }); if (G.winSum) G.winSumShown = true; return; } /* 10월 24일 S-4: 상자의 두 장비는 보이기 전에 저장(chestPend, 고르면 지운다) */ run.drops.push({ room: run.room, item: it.tpl, g: it.g, b: it.b, ch: run.ch || 1 }); giveItem(it); if (G.winSum) G.winSumShown = true;
 }
 function gainXp(run, n) {
   run.xp = (run.xp || 0) + n; let up = 0;
@@ -221,49 +222,49 @@ function roomDef() { const run = G.run; return run.cur || fixedRoom(run.room) ||
 // 선택해서 읽는 갈래별 투자 안내. 추천 비율·기존 능력치·전투 수치는 바꾸지 않는다.
 const STAT_BRANCH_GUIDE = {
   assassin: [
-    '민첩은 베기 기본 피해, 지능은 독 피해와 독 격발을 높입니다. 독 흡수의 회복은 의지에 영향을 받습니다.',
-    '독을 터뜨리는 피해는 지능 1점마다 기준 피해의 3%씩 성장합니다. 민첩은 함께 쓰는 베기와 흘리기를, 체력은 생존을 보강합니다.',
-    '민첩은 베기와 기본·강공격 피해, 흘리기 피해 감소와 최대 스태미나를 높입니다. 기본·강공격은 힘이 더 높으면 힘을 사용합니다.'
+    '민첩은 베기 기본 피해를, 지능은 독 피해와 독 격발을 높입니다. 독 흡수로 되찾는 양은 의지가 높을수록 늘어납니다.',
+    '독을 터뜨리는 피해는 지능 1점마다 기준 피해의 3%씩 늘어납니다. 민첩은 함께 쓰는 베기와 흘리기에, 체력은 버티는 데 씁니다.',
+    '민첩은 베기와 기본·강공격 피해, 흘리기로 줄이는 피해, 최대 스태미나를 높입니다. 힘이 더 높으면 기본·강공격은 힘을 따릅니다.'
   ],
   warden: [
-    '의지는 일반 보호막 생성, 체력은 생명력과 보호막 상한을 높입니다. 비율 채우기는 정해진 목표까지만 채웁니다.',
-    '힘은 기본 피해와 붕괴를 높입니다. 체력은 생존을 보강하며, 보호막 비례 추가 피해는 스킬 기본 피해와 별도입니다.',
-    '힘은 기본 피해와 붕괴를 높입니다. 체력으로 버틸 힘을 보강하고, 민첩은 흘리기와 최대 스태미나에 투자할 때 씁니다.'
+    '의지는 일반 보호막을 얻는 양을, 체력은 생명력과 보호막 상한을 높입니다. 비율 채우기는 정해진 목표까지만 채웁니다.',
+    '힘은 기본 피해와 붕괴를 높입니다. 체력은 오래 버티게 해 줍니다. 보호막에 비례하는 추가 피해는 스킬 기본 피해와 따로 셉니다.',
+    '힘은 기본 피해와 붕괴를 높입니다. 체력은 버티는 힘을 더합니다. 흘리기와 최대 스태미나가 필요하면 민첩을 올립니다.'
   ],
   hunter: [
-    '민첩은 기본·강공격과 스킬 기본 피해, 추적을 소모하는 추가 피해를 높입니다. 추적 소모 피해는 1점마다 기준 추가 피해의 2% 증가하며, 추적 수급량은 그대로입니다.',
-    '민첩은 각 타격의 기본 피해를 높입니다. 출혈 피해는 지능, 기본·강공격은 힘과 민첩 중 높은 값으로 성장합니다.',
-    '민첩은 스킬 기본 피해·흘리기·최대 스태미나를 높입니다. 빠르기는 행동 순서에 영향을 주며 가속 자원과는 별도입니다.'
+    '민첩은 기본·강공격과 스킬 기본 피해, 추적을 소모하는 추가 피해를 높입니다. 추적 소모 피해는 1점마다 기준 추가 피해의 2%씩 늘어납니다. 추적이 쌓이는 양은 그대로입니다.',
+    '민첩은 각 타격의 기본 피해를 높입니다. 출혈 피해는 지능을, 기본·강공격은 힘과 민첩 가운데 높은 쪽을 따라 오릅니다.',
+    '민첩은 스킬 기본 피해·흘리기·최대 스태미나를 높입니다. 빠르기는 행동 순서를 정할 뿐 가속과는 다릅니다.'
   ],
   butcher: [
-    '힘은 공격 피해, 의지는 회복량을 높입니다. 회복이 한도에 닿으면 의지를 더 올려도 실제 회복량은 늘지 않습니다.',
-    '힘은 기본 피해를 높입니다. 체력은 생존과 받은 피해 자원의 상한을 높이지만, 받은 피해 자체를 줄이지는 않습니다.',
-    '힘은 직접 피해, 지능은 출혈 피해를 높입니다. 처치 회복은 전투 한도가 있어 적을 계속 쓰러뜨려도 무한히 늘지 않습니다.'
+    '힘은 공격 피해를, 의지는 회복량을 높입니다. 회복이 한도에 닿으면 의지를 더 올려도 더 회복하지 않습니다.',
+    '힘은 기본 피해를 높입니다. 체력은 버티는 힘과 받은 피해 자원의 상한을 높일 뿐 받는 피해를 줄이지는 않습니다.',
+    '힘은 직접 피해를, 지능은 출혈 피해를 높입니다. 적을 쓰러뜨려 되찾는 생명력은 전투마다 한도가 있습니다.'
   ],
   elementalist: [
-    '주문 기본 피해·화상·화상 소모 피해는 지능으로 성장합니다. 체력으로 생존을, 의지로 회복을 보강합니다.',
-    '주문 기본 피해는 지능으로 성장합니다. 둔화 겹 수는 지능만으로 늘지 않으며, 체력과 의지는 생존·회복을 보강합니다.',
-    '주문 기본 피해는 지능 1점마다 4%, 열충격 피해는 3%씩 성장합니다. 원소를 쌓는 양과 소비량은 각 스킬의 규칙을 따릅니다.'
+    '지능을 올리면 주문 기본 피해와 화상, 화상 소모 피해가 오릅니다. 체력은 오래 버티게, 의지는 더 많이 회복하게 해 줍니다.',
+    '주문 기본 피해는 지능을 따라 오릅니다. 지능만으로는 둔화 겹 수가 늘지 않습니다. 버티는 힘과 회복은 체력과 의지가 맡습니다.',
+    '지능 1점마다 주문 기본 피해는 4%, 열충격 피해는 3%씩 늘어납니다. 원소를 쌓고 쓰는 양은 스킬마다 정해져 있습니다.'
   ],
   spellblade: [
-    '베기 기본 피해는 힘, 주문과 출혈 피해는 지능으로 성장합니다. 함께 쓰는 베기·주문의 비중을 보고 나누세요.',
-    '베기 기본 피해는 힘, 주문과 화상 피해는 지능으로 성장합니다. 기본·강공격의 피해는 힘으로 성장합니다.',
-    '의지는 일반 보호막 생성·회복, 체력은 생명력·보호막 상한을 높입니다. 기본 교대는 고정량이며 베기는 힘, 주문은 지능으로 성장합니다.'
+    '베기 기본 피해는 힘을, 주문과 출혈 피해는 지능을 따라 오릅니다. 베기와 주문 가운데 어느 쪽을 더 쓰는지 보고 나누세요.',
+    '베기 기본 피해와 기본·강공격 피해는 힘을, 주문과 화상 피해는 지능을 따라 오릅니다.',
+    '의지는 일반 보호막과 회복량을, 체력은 생명력과 보호막 상한을 높입니다. 교대로 얻는 보호막은 정해진 양입니다. 베기는 힘을, 주문은 지능을 따라 오릅니다.'
   ],
   monk: [
-    '힘은 기본 피해와 기 추가 피해를 높입니다. 민첩은 최대 스태미나·흘리기를 보강하며 기 수급량 자체를 늘리지는 않습니다.',
-    '힘은 공격·되받기·기 추가 피해를 높입니다. 체력은 버틸 힘을 보강합니다. 민첩만으로 자세의 감소율이 늘지는 않습니다.',
-    '힘은 기본 피해와 기 추가 피해를 높입니다. 민첩은 흘리기·최대 스태미나, 체력은 생존을 보강합니다.'
+    '힘은 기본 피해와 기 추가 피해를 높입니다. 민첩은 최대 스태미나와 흘리기를 높이지만 기가 쌓이는 양은 늘리지 않습니다.',
+    '힘은 공격·되받기·기 추가 피해를 높입니다. 체력은 버티는 힘을 더합니다. 민첩만 올려서는 자세로 줄이는 피해가 늘지 않습니다.',
+    '힘은 기본 피해와 기 추가 피해를 높입니다. 민첩은 흘리기와 최대 스태미나를, 체력은 버티는 힘을 높입니다.'
   ],
   confessor: [
-    '직접 공격은 힘으로 성장합니다. 의지는 정화 회복·상태 저항에 영향을 주지만 보호 겹 수 자체를 늘리지는 않습니다.',
-    '직접 공격은 힘, 옮긴 중독·출혈·화상 피해는 지능으로 성장합니다. 의지의 상태 저항은 적이 건 상태를 받는 데도 영향을 줍니다.',
-    '힘은 기본 피해와 짐·정화·사함의 선택된 추가 피해를 높입니다. 체력으로 생존을 보강하며 고행 피해에는 내 지능 보정을 적용하지 않습니다.'
+    '직접 공격은 힘을 따라 오릅니다. 의지는 정화 회복과 상태 저항을 높이지만 보호 겹 수는 늘리지 않습니다.',
+    '직접 공격은 힘을, 옮긴 중독·출혈·화상 피해는 지능을 따라 오릅니다. 의지로 얻는 상태 저항은 적이 거는 상태에도 듣습니다.',
+    '힘은 기본 피해와 짐·정화·사함의 일부 추가 피해를 높입니다. 체력은 오래 버티게 해 줍니다. 고행 피해에는 내 지능이 붙지 않습니다.'
   ],
   bloodmage: [
-    '지능은 주문 기본 피해와 중독 피해를 높입니다. 체력은 생존, 의지는 회복을 보강합니다.',
-    '지능은 주문 기본 피해와 중독 피해, 의지는 먹기 회복량을 높입니다. 한 번의 회복 상한에 닿으면 실제 회복량은 더 늘지 않습니다.',
-    '지능은 주문 기본 피해를 높입니다. 체력은 생존을 보강하지만 최대 생명력 비율로 내는 비용의 절대량도 커집니다.'
+    '지능은 주문 기본 피해와 중독 피해를 높입니다. 체력은 버티는 힘을, 의지는 회복을 더합니다.',
+    '지능은 주문 기본 피해와 중독 피해를, 의지는 먹기로 되찾는 양을 높입니다. 한 번에 되찾는 상한에 닿으면 더 늘지 않습니다.',
+    '지능은 주문 기본 피해를 높입니다. 체력을 올리면 오래 버티지만 최대 생명력 비율로 내는 비용도 그만큼 커집니다.'
   ]
 };
 function statBranchGuidance(p) {
@@ -327,27 +328,10 @@ function statNext(p, k) {
     ? `, ${p.build === 'elementalist' ? '열충격' : '독 격발'} 피해 +${s * TRIGGER_STAT_PCT}% → +${(s + 1) * TRIGGER_STAT_PCT}%` : '';
   return weapon + skill + (isV2(p) ? '' : `마나 ${calcMpMax(p)} → ${calcMpMax(up)}, `) + `${p.build === 'elementalist' ? '중독·출혈·화상·화상 소모 피해' : isV2(p) ? '중독·출혈·화상 피해' : '지속 피해와 정화 피해'} +${s * 2}% → +${(s + 1) * 2}%` + trigger + ((s + 1) % 10 === 0 && !isV2(p) ? '. 10점: 독 격발 붕괴 +5' : '');
 }
-/* 3챕터 이벤트의 "다음 전투" (11.1절): 다음 일반 · 매복 전투에만 붙는다 */
-function next3Room(room, n3) {
-  if (!n3 || !Object.keys(n3).length) return;
-  if (n3.pre) room.pre = Object.assign({}, room.pre || {}, n3.pre);
-  if (n3.herald) { room.en = (room.en || []).concat([['bruiser', 1]]); room.fire = (room.fire || []).concat([room.en.length - 1]); }
-  if (n3.ambush && !room.ambush) room.ambush = 1;
-  if (n3.noon) { room.mods = (room.mods || []).filter(m => m !== 'noon').concat(['noon']); room.heat0 = n3.noon; }
-}
 /* 3챕터: 처음 만난 위협의 방을 이기면 그 상황을 푸는 소모품 하나 (5.1절 5번) */
 function firstGift3(run, b, R) {
   run.dg.gift = run.dg.gift || {}; const keys = b.en.map(e => e.role).concat(R.mods || []);
   for (const k of keys) if (FIRST_GIFT3[k] && !run.dg.gift[k]) { run.dg.gift[k] = 1; if (k === 'haze') run.dg.gift.mirage = 1; if (k === 'mirage') run.dg.gift.haze = 1; if (!consGrant(run, FIRST_GIFT3[k], 'n', 1)) toast('처음 겪은 것의 답: ' + CONS[FIRST_GIFT3[k]].ico + ' ' + CONS[FIRST_GIFT3[k]].n); }
-}
-const ashOk = c => CONS[c.id].use !== 'none' && CONS[c.id].price > 6; // 재의 제단에 태울 수 있는 것 (파는 것 · 돌멩이 제외)
-function altarConsCost(run, id) {
-  let left = id === 'ash' ? 4 : 3; const out = [];
-  for (const c of run.cons || []) {
-    if (!(id === 'ash' ? ashOk(c) : CONS[c.id].use !== 'none')) continue;
-    const n = Math.min(left, c.n); if(n)out.push(consName(c) + ' ×' + n); left -= n; if(!left)break;
-  }
-  return left ? [] : out;
 }
 function altarReceipt(run, id, paid, received) {
   const receipt = { room: run.room, ch: run.ch || 1, name: (ALTARS.find(a=>a.id===id)||{}).n || '제단', paid, received };
@@ -357,29 +341,21 @@ function altarReceiptHtml(run) {
   const x=run.lastAltar;if(!x)return '';
   return `<details class="card"${run.room===x.room+1?' open':''}><summary>${esc(x.name)} · ${x.ch}챕터 ${x.room}층 거래 결과</summary><p><b>바친 것</b>: ${x.paid.map(esc).join(', ') || '없음'}</p><p><b>받은 것</b>: ${x.received.map(esc).join(', ') || '없음'}</p></details>`;
 }
-function burnCons(run, n) { if ((run.cons || []).filter(ashOk).reduce((a, c) => a + c.n, 0) < n) return false; for (let k = 0; k < n; k++) { const c = run.cons.find(ashOk); c.n--; if (c.n <= 0) run.cons.splice(run.cons.indexOf(c), 1); } return true; }
 /* 2챕터 이벤트 · 제단 도우미 (10월 5일) */
-const EVBUFF = { lit: ['가게 등불', '어둠 방이 나오지 않습니다.'], elixir: ['약장수의 병', '주는 피해 +15%.'], elixirB: ['병의 뒤끝', '받는 피해 +10%.'], fog: ['몽롱한 연기', '주는 피해 −15%.'], names: ['벽의 이름들', '전투를 약화 1로 시작합니다.'], snuff: ['꺼진 촛불', '받는 화상 피해 0, 대신 주는 피해 −5%.'], procession: ['장례 행렬', '받는 직접 피해 −10%, 주는 피해 −10%.'], ashcover: ['재를 덮어 주었다', '받는 직접 피해 −5%.'], herald: ['전령에게 무릎 꿇었다', '받는 화상 피해 0, 대신 주는 피해 −5%.'] }; // 이벤트로 얻는 몇 방 동안의 효과
+const EVBUFF = { lit: ['가게 등불', '어둠 방이 나오지 않습니다.'], elixir: ['약장수의 병', '주는 피해 +15%.'], elixirB: ['병의 뒤끝', '받는 피해 +10%.'], fog: ['몽롱한 연기', '주는 피해 −15%.'], names: ['벽의 이름들', '전투를 약화 1로 시작합니다.'], snuff: ['꺼진 촛불', '받는 화상 피해 0, 대신 주는 피해 −5%.'] }; // 이벤트로 얻는 몇 방 동안의 효과
 const altarGold = run => { const A = ALTARS.find(x => x.id === 'gold'); const v = A && A.cost ? A.cost[Math.min(A.cost.length, run.ch || 1) - 1] : 40; return v; };
-function n3pre(run, k, n) { run.next3 = run.next3 || {}; run.next3.pre = Object.assign({}, run.next3.pre); run.next3.pre[k] = (run.next3.pre[k] || 0) + n; } // 3챕터 이벤트: 다음 일반 · 매복 전투의 시작 상태
 /* 가장 많이 찬 플라스크(10월 24일 만든 사람 요청: 둘 이상이 같으면 플레이어가 고른다). flaskTies: 같은 최대 칸 수의 종류들, flaskTake1: 고른 것(없거나 동률 밖이면 첫째)을 한 칸 비운다 */
 const FLASK_K = ['life', 'mana', 'stam'], FLASK_KN = { life: '생명력', mana: '정화', stam: '스태미나' };
 function flaskTies(p) { const m = Math.max(...FLASK_K.map(k => p.flask[k] || 0)); return m > 0 ? FLASK_K.filter(k => (p.flask[k] || 0) === m) : []; }
 function flaskTake1(p, pick) { const T = flaskTies(p), k = T.includes(pick) ? pick : T[0]; if (k) p.flask[k] = Math.max(0, (p.flask[k] || 0) - 1); return k || null; }
 const FLASK_PICK_EV = ['monk:feed', 'attic:feed']; // 가장 많이 찬 플라스크 하나를 비우는 이벤트 선택지
-function takeCons(run, n) { const pool = (run.cons || []).filter(c => CONS[c.id].use !== 'none'); if (pool.reduce((a, c) => a + c.n, 0) < n) return false; for (let k = 0; k < n; k++) { const c = run.cons.find(x => CONS[x.id].use !== 'none'); c.n--; if (c.n <= 0) run.cons.splice(run.cons.indexOf(c), 1); } return true; }
-function giveChCons(run, ch) { const ids = Object.keys(CONS).filter(k => (CONS[k].ch || 1) === ch && CONS[k].use !== 'none'); if (!ids.length) return; const id = pickR(ids); consGrant(run, id, 'n', 1); }
-function refundDeepest(run) { if (!run.atree) return null; return atRefundLeaf(run); } // 10월 16일 0.8.0 2단계: 잊힌 스승의 묘비는 액티브 노드 하나(끝 노드 가운데 가장 바깥 것)
 function enterRoom() {
   const run = G.run; const R = roomDef(); const p = run.p; if (!R.type) return;
   if (run.ksPending > 0 && ksOpen()) return; // 10월 16일 0.8.0 2단계: 받을 큰 각인이 있으면 먼저 고른다
   if (!ROOM_TYPES[R.type] || !ROOM_TYPES[R.type].fight) { if (R.type !== 'boss') return; }
   const nx = run.next || {}; const room = Object.assign({}, R, { buffs: Object.assign({}, run.buffs), pre: nx.pre || null, mode: run.mode || 'normal' });
   if (run.marks && run.marks.length) room.marks = run.marks; // 표식 도전
-  const n3 = ['normal', 'ambush'].includes(R.type) ? (run.next3 || {}) : {}; next3Room(room, n3); if (['normal', 'ambush'].includes(R.type)) { run.next3Used = n3; run.next3 = {}; } else run.next3Used = null; // 3챕터 이벤트의 "다음 전투": 다음 일반 · 매복 전투에만
   if (nx.chase && R.type !== 'boss') { room.en = (room.en || []).concat([['bruiser']]); }
-  if (nx.coffin && R.type !== 'boss') room.en = (room.en || []).concat([['skeleton', 1]]); // 봉인된 관
-  if (nx.block && R.type !== 'boss') room.en = (room.en || []).concat([['bruiser']]); // 장례 행렬을 막아섰다
   if (nx.reader && R.type !== 'boss') room.en = (room.en || []).concat([['darkmage']]); // A1 무너진 서고: 번진 글자를 읽고 말았다
   if ((run.ch || 1) === 2) ch2Enter(run, R, room, nx); // A2 등불 기름 · 이벤트 흔적
   if ((run.ch || 1) === 3 && !OLD3) w3Enter(run, R, room, nx); // A3 경보 당김 · 이벤트 흔적
@@ -431,8 +407,8 @@ function battleContinue() {
   const lootE = (run.lootLog || []).length > nLL ? run.lootLog[run.lootLog.length - 1] : null;
   fxRun(run.p, 'onWin', run);
   const xpGot = Math.round(b.xp || 0); const lvUp = gainXp(run, xpGot);
-  const nu3 = run.next3Used || {}; run.next3Used = null; if (old3(run.ch)) firstGift3(run, b, R);
-  let gold = (R.gold || 0) * (R.mods && (R.mods.includes('bell') || R.mods.includes('drums')) ? 1.5 : 1) + (nu.chase ? 20 : 0) + (nu.block ? 30 : 0) + (R.type === 'treasure' ? fxVal(run.p, 'treasureGold', 0, (a, v) => a + v) : 0);
+  if (old3(run.ch)) firstGift3(run, b, R);
+  let gold = (R.gold || 0) * (R.mods && (R.mods.includes('bell') || R.mods.includes('drums')) ? 1.5 : 1) + (nu.chase ? 20 : 0) + (R.type === 'treasure' ? fxVal(run.p, 'treasureGold', 0, (a, v) => a + v) : 0);
   if (gold) gainGold(run, gold, ROOM_TYPES[R.type].n + ' 방을 넘었습니다');
   G.winSum = { gold: Math.round((run.gold || 0) - g0), xp: xpGot, lv: lvUp ? run.lv : 0, got: lootE ? lootE.got : {}, lost: lootE ? lootE.lost : 0 }; // 화면 요약용(규칙에 쓰지 않는다)
   const drops = []; const t = R.type;
@@ -443,8 +419,6 @@ function battleContinue() {
   if (t === 'strong' && (run.ch || 1) === 2 && run.dg.strongUp) { drops.push(mkItem(dropKey(run, 'h'))); run.dg.strongUp = 0; } // A2 벽의 이름들: 강적 방 보상 한 단계 위
   if (t === 'strong') drops.push(mkItem(dropKey(run, rollGradeCh(run.ch, 'big')))); /* 강적은 희귀 이상 보장 (10월 4일, 2챕터부터 영웅 · 전설도) */
   if (t === 'trial') drops.push(mkItem(dropKey(run, rollGradeCh(run.ch, 'big'))));
-  if (nu.coffin) drops.push(mkItem(dropKey(run, rollGradeCh(run.ch, 'big'))));
-  if (nu3.herald) drops.push(mkItem(dropKey(run, 'r'))); // 여왕의 전령에게 칼을 뽑았다
   for (let k = 0; k < (nu.extraDrop || 0); k++) drops.push(mkItem(dropKey(run, pg(rollGradeCh(run.ch, 'room')))));
   for (const it of drops) if (!isG8(it)) it.g = ITEMS[it.tpl].g || 'n';
   advanceFloor();
@@ -507,7 +481,7 @@ function saveRunLocal() {
   saveLocal();
 }
 function runRecord(run) {
-  return Object.assign({ playerState: run.p ? { hp: r1(Math.max(0, run.p.hp)), hpMax: run.p.hpMax, st: r1(run.p.st), stMax: run.p.stMax } : null, grave: run.grave || null, combatStats: run.p ? gearStats(run.p) : null, eqDetails: adminGearSnapshot(run), tv: run.tv || 1, ptree: run.ptree ? JSON.parse(JSON.stringify(run.ptree)) : null, atree: run.atree ? JSON.parse(JSON.stringify(run.atree)) : null, ksLog: run.ksLog || [], mig08: run.mig08 || null, tree: run.tree ? JSON.parse(JSON.stringify(run.tree)) : null, treeLog: run.treeLog || [], treeNodes: (SKILLS2[run.build] || []).map(s => ({ id: s.id, n: s.n, b: s.b, row: s.row || 0, tier: s.tier, start: !!s.start, par: s.par || [], head: skHead(s), body: skBody(s) })), cons: run.cons || [], consPending: run.consPending || [], consGainLog: run.consGainLog || [], consLog: run.consLog || [], lootLog: run.lootLog || [], discards: run.discards || [], inv: run.inv ? Object.values(run.inv).map(x => adminItemSnapshot(x)).filter(Boolean) : null, id: run.id, v: VERSION, mode: run.mode || 'normal', build: run.build, boss: run.boss, startedAt: run.startedAt, endedAt: run.endedAt || null, result: run.result, roomReached: run.room, deaths: run.deaths, rooms: run.rooms, acts: run.acts.slice(-900), swaps: run.swaps, blockPicked: run.blockPicked, drops: run.drops, survey: run.survey, stats: run.stats || null, statLog: run.statLog || [], choices: run.choices || [], skills: run.skills || null, skillLog: run.skillLog || [], cname: run.cname || '', ch: run.ch || 1, clears: run.clears || 0, lv: run.lv || 1, xp: Math.round(run.xp || 0), gold: run.gold || 0, playMs: Math.round(run.playMs || 0), doorLog: run.doorLog || [], settle: run.settle || null, shop: run.shop ? { log: run.shop.log, stock: run.shop.stock.map(x => ({ tpl: x.it.tpl, g: x.it.g, price: x.price, sold: x.sold })), cons: (run.shop.cons || []).map(x => ({ id: x.id, price: x.price })) } : null, shopHist: run.shopHist || [], eq7: run.eqU ? EQ_SLOTS.map(sl => { const it = run.eqU[sl] && run.inv[run.eqU[sl]]; return it ? it.tpl + ':' + it.g : null; }) : null, phase: run.phase || '', surveys: run.surveys || null, awk: run.awk || [], awkLog: run.awkLog || [], gambleN: run.gambleN || 0 }, run.markCh ? { marks: run.marks || [], markCh: run.markCh, markPts: run.markPts || 0, mode: run.mode || 'normal' } : null);
+  return Object.assign({ playerState: run.p ? { hp: r1(Math.max(0, run.p.hp)), hpMax: run.p.hpMax, st: r1(run.p.st), stMax: run.p.stMax } : null, grave: run.grave || null, combatStats: run.p ? gearStats(run.p) : null, eqDetails: adminGearSnapshot(run), tv: run.tv || 1, ptree: run.ptree ? JSON.parse(JSON.stringify(run.ptree)) : null, atree: run.atree ? JSON.parse(JSON.stringify(run.atree)) : null, ksLog: run.ksLog || [], mig08: run.mig08 || null, tree: run.tree ? JSON.parse(JSON.stringify(run.tree)) : null, treeLog: run.treeLog || [], treeNodes: (SKILLS2[run.build] || []).map(s => ({ id: s.id, n: s.n, b: s.b, row: s.row || 0, tier: s.tier, start: !!s.start, par: s.par || [], head: skHead(s), body: skBody(s) })), cons: run.cons || [], consPending: run.consPending || [], consGainLog: run.consGainLog || [], consLog: run.consLog || [], lootLog: run.lootLog || [], discards: run.discards || [], inv: run.inv ? Object.values(run.inv).map(x => adminItemSnapshot(x)).filter(Boolean) : null, id: run.id, v: VERSION, mode: run.mode || 'normal', build: run.build, boss: run.boss, startedAt: run.startedAt, endedAt: run.endedAt || null, result: run.result, roomReached: run.room, deaths: run.deaths, rooms: run.rooms, acts: run.acts.slice(-900), swaps: run.swaps, blockPicked: run.blockPicked, drops: run.drops, survey: run.survey, stats: run.stats || null, statLog: run.statLog || [], choices: run.choices || [], skills: run.skills || null, skillLog: run.skillLog || [], cname: run.cname || '', ch: run.ch || 1, clears: run.clears || 0, lv: run.lv || 1, xp: Math.round(run.xp || 0), gold: run.gold || 0, playMs: Math.round(run.playMs || 0), doorLog: run.doorLog || [], settle: run.settle || null, shop: run.shop ? { log: run.shop.log, stock: run.shop.stock.map(x => ({ tpl: x.it.tpl, g: x.it.g, price: x.price, sold: x.sold })), cons: (run.shop.cons || []).map(x => ({ id: x.id, price: x.price })) } : null, shopHist: run.shopHist || [], eq7: run.eqU ? EQ_SLOTS.map(sl => { const it = run.eqU[sl] && run.inv[run.eqU[sl]]; return it ? it.tpl + ':' + it.g : null; }) : null, phase: run.phase || '', surveys: run.surveys || null, awk: run.awk || [], awkLog: run.awkLog || [], gambleN: run.gambleN || 0 }, run.markCh ? { marks: run.marks || [], markCh: run.markCh, markPts: run.markPts || 0, mode: run.mode || 'normal' } : null, run.noRank ? { noRank: 1 } : null, run.mkLeg ? { mkLeg: 1 } : null); // 10월 24일: 판 지문 표시(js/62 mkCheck)를 관리자 결과 보기(js/74)에 보인다
 }
 async function finishSurvey(ans) {
   const run = G.run;
